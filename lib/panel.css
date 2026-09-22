@@ -11,7 +11,7 @@
 .krext-panel.krext-inline .krext-btn { border-color: #c9d1dc; background: #fff; color: #1f4e9c; }
 .krext-panel.krext-inline .krext-btn:hover { background: #eef3fa; }
 .krext-panel.krext-inline .krext-head .krext-badge { background: #e6ebf2; color: #333; }
-.krext-panel.krext-inline .krext-head .krext-badge-hot { background: #d7263d; color: #fff; }
+.krext-panel.krext-inline .krext-head .krext-badge-hot { background: #a8323f; color: #fff; }
 .krext-panel.krext-inline .krext-body { padding: 12px 14px 12px; }
 .krext-panel.krext-inline .krext-cols { display: grid; grid-template-columns: minmax(240px, 300px) 1fr; gap: 16px; align-items: start; }
 .krext-panel.krext-inline .krext-stats { flex-direction: column; }
@@ -29,6 +29,10 @@
 .krext-btn { border: 1px solid rgba(255,255,255,.45); background: rgba(255,255,255,.12); color: #fff; border-radius: 6px; width: 26px; height: 24px; line-height: 20px; font-size: 14px; cursor: pointer; padding: 0; }
 .krext-btn:hover { background: rgba(255,255,255,.25); }
 .krext-btn:disabled { opacity: .5; cursor: default; }
+/* 헤더 전체가 접기/펼치기 버튼 역할 (버튼은 각자 동작) */
+.krext-head[data-act="toggle"] { cursor: pointer; user-select: none; }
+.krext-head[data-act="toggle"]:hover { background: #2a5cae; }
+.krext-panel.krext-inline .krext-head[data-act="toggle"]:hover { background: #f5f8fc; }
 /* 헤더 요약 칩: 보완요청 / 신청 / 카드미청구 */
 .krext-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .krext-chip { display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border-radius: 12px; background: rgba(255,255,255,.18); font-size: 11.5px; line-height: 22px; white-space: nowrap; }
@@ -45,9 +49,9 @@
 .krext-panel.krext-inline .krext-chip-blue .krext-chip-l { color: #1a5fb4; }
 .krext-panel.krext-inline .krext-chip-warn { background: #fff3cd; color: #8a5a00; }
 .krext-badge { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 10px; background: #e6ebf2; color: #333; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
-.krext-badge-hot { background: #d7263d; color: #fff; }
+.krext-badge-hot { background: #a8323f; color: #fff; }
 .krext-head .krext-badge { background: rgba(255,255,255,.2); color: #fff; }
-.krext-head .krext-badge-hot { background: #ff5a6e; }
+.krext-head .krext-badge-hot { background: #a8323f; }
 .krext-body { padding: 8px 10px 10px; }
 .krext-sec { margin-bottom: 10px; }
 .krext-sec-title { font-weight: 700; font-size: 13px; margin: 4px 0 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -107,4 +111,28 @@
 .krext-toggle { margin-left: auto; display: inline-flex; border: 1px solid #c9d1dc; border-radius: 6px; overflow: hidden; }
 .krext-toggle a { padding: 1px 8px; font-size: 11px; color: #4b5563 !important; text-decoration: none !important; }
 .krext-toggle a.krext-on { background: #1f4e9c; color: #fff !important; }
+/* 구역 스위치: 카드미청구 ↔ 과제집행비율 */
+.krext-switch { display: inline-flex; border: 1px solid #c9d1dc; border-radius: 7px; overflow: hidden; background: #f7f9fc; }
+.krext-switch a { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; font-size: 13px; font-weight: 700; color: #4b5563 !important; text-decoration: none !important; border-left: 1px solid #c9d1dc; }
+.krext-switch a:first-child { border-left: 0; }
+.krext-switch a:hover { background: #eef3fa; }
+.krext-switch a.krext-on { background: #1f4e9c; color: #fff !important; }
+.krext-switch a.krext-on .krext-badge { background: rgba(255,255,255,.22); color: #fff; }
+.krext-switch a.krext-on .krext-badge-hot { background: #8f2f3a; }
+.krext-panel.krext-inline .krext-switch a.krext-on .krext-badge-hot { background: #8f2f3a; color: #fff; }
+/* 집행비율 막대 */
+.krext-prj-rate { flex: none; width: 108px; display: inline-flex; justify-content: flex-end; }
+.krext-rate { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.krext-rate-v { min-width: 44px; text-align: right; font-weight: 700; }
+.krext-bar { display: inline-block; width: 52px; height: 7px; border-radius: 4px; background: #e6ebf2; overflow: hidden; vertical-align: middle; }
+.krext-bar-fill { display: block; height: 100%; background: #4d8fe6; border-radius: 4px; }
+.krext-bar-fill.krext-bar-warn { background: #f0a020; }
+.krext-bar-fill.krext-bar-over { background: #d7263d; }
+.krext-rate-plus { color: #b3261e; font-weight: 600; }
+/* 비목별 잔액 표 */
+.krext-bgt .krext-bgt-nm { white-space: nowrap; }
+.krext-bgt tbody tr.krext-bgt-unbilled td { background: #fff8f8; border-top: 1px dashed #f3b3bb; }
+.krext-bgt tfoot td { border-top: 2px solid #d5dbe3; background: #f3f5f8; font-weight: 700; }
+.krext-bgt .krext-rate { justify-content: flex-end; }
+.krext-panel.krext-inline .krext-bgt .krext-bar { width: 72px; }
 @media (max-width: 900px) { .krext-panel.krext-float { width: calc(100vw - 32px); right: 16px; } }

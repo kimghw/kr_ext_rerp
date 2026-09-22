@@ -21,7 +21,7 @@
 
   <section class="card">
     <h2>과제 선택</h2>
-    <p class="help">본인이 참여연구원 또는 과제책임자로 있는 과제만 나옵니다 ("내 참여 과제만 보기"가 켜진 경우). 체크를 해제한 과제는 카드미청구 조회와 패널 표시에서 제외되며, 새로 생기는 과제는 기본으로 포함됩니다.</p>
+    <p class="help">본인이 참여연구원 또는 과제책임자로 있는 과제만 나옵니다 ("내 참여 과제만 보기"가 켜진 경우). 체크를 바꾸면 <b>바로 저장·적용</b>되어 해제한 과제는 카드미청구 조회와 패널 표시, 아래 카드 목록에서 제외됩니다 (새로 생기는 과제는 기본 포함).</p>
     <div class="row">
       <button type="button" id="btnPrjRefresh" class="btn">과제 목록 새로고침</button>
       <button type="button" id="btnPrjAll" class="btn">모두 선택</button>
@@ -33,7 +33,21 @@
   </section>
 
   <section class="card">
-    <h2>과제별 카드 귀속</h2>
+    <h2>과제집행비율 비목 선택</h2>
+    <p class="help">체크한 비목만 과제집행비율 보기의 계산과 표에 들어가고, 체크를 풀면 계산과 표에서 모두 빠집니다. 체크를 바꾸면 <b>바로 저장·적용</b>됩니다.
+      목록은 위에서 선택한 과제의 자금현황(비목별 잔액)에서 조회된 비목이며, 아직 목록에 없는 비목은 이름에 <b>인건비·연구수당·간접비</b>가 들어가면 기본 제외, 그 외는 기본 포함입니다.</p>
+    <div class="row">
+      <button type="button" id="btnBgtAll" class="btn">모두 선택</button>
+      <button type="button" id="btnBgtNone" class="btn">모두 해제</button>
+      <button type="button" id="btnBgtRefresh" class="btn">목록 새로고침</button>
+      <span id="bgtInfo" class="muted"></span>
+      <span id="bgtStatus" class="status"></span>
+    </div>
+    <div id="bgtList" class="prj-list"></div>
+  </section>
+
+  <details class="card" data-collapse="issued">
+    <summary><h2>과제별 카드 귀속 <span id="issuedSummary" class="muted"></span></h2></summary>
     <p class="help">기본 규칙: 과제카드발급내역의 카드 <b>계좌번호</b>가 그 과제 기본정보의 <b>과제 계좌(지출계좌)</b>와 같은 카드만 그 과제의 카드로 봅니다.
       계좌가 다른 카드는 기본으로 빠지며, 아래 표에서 "포함"을 체크하면 그 과제에 넣습니다. 일치 카드의 체크를 풀면 뺍니다.</p>
     <label class="check"><input type="checkbox" id="accountRule"> 계좌번호 일치 규칙 사용 (끄면 발급 카드 전체를 그 과제 카드로 봄)</label>
@@ -45,10 +59,10 @@
       <span id="issuedStatus" class="status"></span>
     </div>
     <div id="issuedList" class="issued-list"></div>
-  </section>
+  </details>
 
-  <section class="card">
-    <h2>모니터링 카드 선택</h2>
+  <details class="card" data-collapse="monitor">
+    <summary><h2>모니터링 카드 선택 <span id="monitorSummary" class="muted"></span></h2></summary>
     <p class="help">귀속이 끝난 카드 중에서 패널에 보여줄 카드를 더 좁힙니다. "전체 보기"면 귀속된 모든 카드를 표시합니다.</p>
     <label class="radio"><input type="radio" name="cardFilterMode" value="all"> 전체 보기</label>
     <label class="radio"><input type="radio" name="cardFilterMode" value="specific"> 선택한 카드만 보기</label>
@@ -64,7 +78,7 @@
       </details>
       <p class="help">아무것도 선택하지 않으면 전체 카드를 표시합니다. 패널에서는 카드번호 뒤 8자리(예: 0478-4126)로 표시됩니다.</p>
     </div>
-  </section>
+  </details>
 
   <section class="card">
     <h2>표시 위치</h2>
@@ -87,8 +101,8 @@
     </div>
   </section>
 
-  <section class="card">
-    <h2>미승인내역 실시간 조회 (선택)</h2>
+  <details class="card" data-collapse="unap">
+    <summary><h2>미승인내역 실시간 조회 (선택) <span id="unapSummary" class="muted"></span></h2></summary>
     <p class="help">R&amp;D ERP 메인화면을 열면 아래 <b>캡처 로그</b>에 호출된 서비스가 기록됩니다. 미승인내역(임시저장/보완요청/신청/구매요청) 값을 돌려주는 서비스를 찾아
       <b>이 서비스 사용</b>을 누른 뒤, 응답 JSON의 필드명을 아래에 적으면 eClass 화면에서 실시간으로 조회합니다. 설정 전에는 메인화면 방문 시 화면에서 읽은 값을 표시합니다.</p>
     <div class="grid">
@@ -109,10 +123,10 @@
       <summary>화면에서 읽은 마지막 미승인내역 스냅샷</summary>
       <pre id="snapshotOut" class="out">없음</pre>
     </details>
-  </section>
+  </details>
 
-  <section class="card">
-    <h2>고급: 서비스 ID / 입력값</h2>
+  <details class="card" data-collapse="adv">
+    <summary><h2>고급: 서비스 ID / 입력값 <span id="advSummary" class="muted"></span></h2></summary>
     <p class="help">기본값은 R&amp;D ERP 화면 스크립트에서 확인한 값입니다. 문제가 없으면 그대로 두세요.</p>
     <div class="grid">
       <label>이용기관 일련번호 <input type="text" id="advUsefac"></label>
@@ -126,8 +140,12 @@
       <label>지출계좌 계좌구분 코드 (비우면 등록된 모든 과제 계좌와 대조) <input type="text" id="advExpenseAcctDivCd" placeholder="예) 10"></label>
       <label>참여인력 서비스 <input type="text" id="advParticipantsService"></label>
       <label class="wide">참여인력 입력 JSON (PRJ_NO 자동 추가, SEARCH_GB 0:전체 1:계속 2:종료) <input type="text" id="advParticipantsInput"></label>
+      <label>비목별 잔액 서비스 (자금현황, 과제예산) <input type="text" id="advBudgetService"></label>
+      <label class="wide">비목별 잔액 입력 JSON (PRJ_NO 자동 추가, RES_CD 비우면 전체 재원) <input type="text" id="advBudgetInput"></label>
+      <label>비목별 잔액 서비스 (본예산 과제) <input type="text" id="advBudgetBaseService"></label>
+      <label>과제 상세 서비스 (예산기준 확인) <input type="text" id="advProjectDetailService"></label>
     </div>
-  </section>
+  </details>
 
   <div class="row sticky">
     <button type="submit" class="btn primary">저장</button>
@@ -138,7 +156,7 @@
 
 <section class="card">
   <h2>진단</h2>
-  <p class="help">과제 하나를 골라 확장이 실제로 호출하는 서비스(과제 목록, 카드 사용내역, 발급내역, 참여인력)의 원본 응답을 확인합니다.
+  <p class="help">과제 하나를 골라 확장이 실제로 호출하는 서비스(과제 목록, 카드 사용내역, 발급내역, 참여인력, 자금현황 비목별 잔액)의 원본 응답을 확인합니다.
     취합이 이상할 때 <b>결과 복사</b>로 복사해 개발자에게 전달하세요. R&amp;D ERP 로그인 세션이 필요합니다.</p>
   <div class="row">
     <select id="diagPrj"></select>

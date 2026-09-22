@@ -1,9 +1,9 @@
 /* 툴바 팝업: 패널 렌더러 재사용 */
 (async () => {
   const host = document.getElementById('krext-panel');
-  const state = { mode: 'popup', loading: true, data: null, fatal: null, collapsed: false, expanded: new Set(), rndUrl: null, view: 'project', version: '' };
+  const state = { mode: 'popup', loading: true, data: null, fatal: null, collapsed: false, expanded: new Set(), rndUrl: null, view: 'project', section: 'cards', version: '' };
   try { state.version = chrome.runtime.getManifest().version; } catch (e) {}
-  try { const l = await chrome.storage.local.get(['cache', 'panelView']); state.data = l.cache || null; state.view = l.panelView === 'card' ? 'card' : 'project'; } catch (e) {}
+  try { const l = await chrome.storage.local.get(['cache', 'panelView', 'panelSection']); state.data = l.cache || null; state.view = l.panelView === 'card' ? 'card' : 'project'; state.section = l.panelSection === 'budget' ? 'budget' : 'cards'; } catch (e) {}
   const draw = () => KRX_RENDER.render(host, state);
 
   host.addEventListener('click', (ev) => {
@@ -14,6 +14,7 @@
     else if (act === 'settings') { ev.preventDefault(); chrome.runtime.openOptionsPage(); }
     else if (act === 'prj') { ev.preventDefault(); const k = btn.dataset.prj; if (state.expanded.has(k)) state.expanded.delete(k); else state.expanded.add(k); draw(); }
     else if (act === 'view') { ev.preventDefault(); state.view = btn.dataset.view === 'card' ? 'card' : 'project'; chrome.storage.local.set({ panelView: state.view }); draw(); }
+    else if (act === 'section') { ev.preventDefault(); state.section = btn.dataset.section === 'budget' ? 'budget' : 'cards'; chrome.storage.local.set({ panelSection: state.section }); draw(); }
     else if (act === 'claim') { if (ev.target.closest('a')) return; ev.preventDefault(); if (btn.dataset.href) chrome.tabs.create({ url: btn.dataset.href }); }
   });
   document.getElementById('btnOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());

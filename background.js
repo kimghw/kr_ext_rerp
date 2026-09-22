@@ -6,6 +6,7 @@ const CAPTURE_KEY = 'captureLog';
 const CAPTURE_MAX = 150;
 const ALARM = 'krext-refresh';
 let inflight = null;
+let settingsGen = 0;   // 설정이 바뀔 때마다 증가. 조회 도중 바뀌면 그 결과(이전 설정 기준)는 버리고 새 설정으로 다시 조회
 
 async function getCache() { return (await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY] || null; }
 
@@ -28,25 +29,29 @@ function updateBadge(data) {
 async function refresh(force) {
   if (inflight) return inflight;
   inflight = (async () => {
-    const settings = await KRX_SETTINGS.load();
-    const cache = await getCache();
-    const ttl = Math.max(1, KRX_FMT.num(settings.refreshMinutes) || 10) * 60000;
-    if (!force && cache && cache.ts && Date.now() - cache.ts < ttl) { updateBadge(cache); return cache; }
-    const data = await KRX_API.collect(settings);
-    const issued = data.issued || [];
-    const projectList = data.projectList || [];
-    delete data.issued;
-    delete data.projectList;
-    await chrome.storage.local.set({ [CACHE_KEY]: data });
-    if (!data.loginRequired && data.memberFilter !== 'no-id' && !data.error) {
-      // 설정 페이지의 과제 선택 / 발급 카드 목록: 참여 과제만 저장 (다른 과제 정보는 저장하지 않음)
-      await chrome.storage.local.set({
-        projectList: { ts: data.ts, projects: projectList },
-        issuedCards: { ts: data.ts, projects: issued }
-      });
+    for (;;) {
+      const gen = settingsGen;
+      const settings = await KRX_SETTINGS.load();
+      const cache = await getCache();
+      const ttl = Math.max(1, KRX_FMT.num(settings.refreshMinutes) || 10) * 60000;
+      if (!force && cache && cache.ts && Date.now() - cache.ts < ttl) { updateBadge(cache); return cache; }
+      const data = await KRX_API.collect(settings);
+      if (gen !== settingsGen) { force = true; continue; }   // 조회 중 설정이 바뀜(예: 과제 제외) → 이 결과는 캐시하지 않고 다시 조회
+      const issued = data.issued || [];
+      const projectList = data.projectList || [];
+      delete data.issued;
+      delete data.projectList;
+      await chrome.storage.local.set({ [CACHE_KEY]: data });
+      if (!data.loginRequired && data.memberFilter !== 'no-id' && !data.error) {
+        // 설정 페이지의 과제 선택 / 발급 카드 목록: 참여 과제만 저장 (다른 과제 정보는 저장하지 않음)
+        await chrome.storage.local.set({
+          projectList: { ts: data.ts, projects: projectList },
+          issuedCards: { ts: data.ts, projects: issued }
+        });
+      }
+      updateBadge(data);
+      return data;
     }
-    updateBadge(data);
-    return data;
   })().finally(() => { inflight = null; });
   return inflight;
 }
@@ -83,6 +88,7 @@ chrome.alarms.onAlarm.addListener((a) => { if (a.name === ALARM) refresh(true).c
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if ((area === 'sync' || area === 'local') && changes.settings) {
+    settingsGen++;   // 진행 중인 조회가 있으면 끝난 뒤 새 설정으로 한 번 더 돌게 함
     chrome.storage.local.remove(CACHE_KEY).then(() => { scheduleAlarm(); refresh(true).catch(() => {}); });
   }
 });

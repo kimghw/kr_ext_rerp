@@ -8,7 +8,9 @@ label { display: block; margin: 6px 0; }
 label.radio { display: inline-block; margin-right: 18px; }
 label.check { display: block; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; }
-.grid label.wide { grid-column: 1 / -1; }
+.grid label.wide, .grid > .wide { grid-column: 1 / -1; }
+.grid .inline-checks { display: flex; align-items: center; gap: 4px 14px; flex-wrap: wrap; margin: 6px 0; }
+.grid .inline-checks label.radio { margin: 0 4px 0 0; }
 input[type=text], input[type=url], input[type=number], input[type=search], textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #c9d1dc; border-radius: 6px; font: inherit; }
 input[type=number] { width: 90px; }
 .grid label > input[type=text], .grid label > input[type=url] { margin-top: 2px; }
@@ -38,6 +40,8 @@ textarea { font-family: Consolas, "Courier New", monospace; }
 .prj-table tr.off td { color: #9aa1ab; background: #fafbfc; }
 .prj-table tr.off td.nm { text-decoration: line-through; }
 .prj-table label { display: block; margin: 0; cursor: pointer; }
+.prj-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prj-table td.tag { color: #8a919c; font-size: 12px; white-space: nowrap; }
 .mem-y { color: #1a7f37; font-weight: 700; }
 .mem-n { color: #b3261e; }
 .row { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; flex-wrap: wrap; }
@@ -62,3 +66,12 @@ textarea { font-family: Consolas, "Courier New", monospace; }
 .cap .btn { padding: 3px 9px; font-size: 12px; }
 .cap.hit { border-color: #f3b3bb; background: #fff7f8; }
 details summary { cursor: pointer; color: #1f4e9c; font-size: 13px; margin: 6px 0; }
+/* 접을 수 있는 구역 (details.card): 제목 클릭으로 접기/펼치기, 상태는 저장됨 */
+details.card > summary { list-style: none; color: inherit; font-size: inherit; margin: 0; display: flex; align-items: center; gap: 8px; user-select: none; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::before { content: '▸'; color: #8a919c; font-size: 13px; width: 12px; flex: none; transition: transform .12s; }
+details.card[open] > summary::before { content: '▾'; }
+details.card > summary h2 { margin: 0; flex: 1; }
+details.card > summary h2 .muted { margin-left: 6px; }
+details.card:not([open]) > summary:hover h2 { color: #1f4e9c; }
+details.card[open] > summary { margin-bottom: 8px; }

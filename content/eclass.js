@@ -59,13 +59,14 @@
   }
   if (!inline) { host.classList.add('krext-float'); document.body.appendChild(host); }
 
-  const state = { mode: inline ? 'inline' : 'page', loading: true, data: null, fatal: null, collapsed: false, expanded: new Set(), rndUrl: null, view: 'project', version: '' };
+  const state = { mode: inline ? 'inline' : 'page', loading: true, data: null, fatal: null, collapsed: false, expanded: new Set(), rndUrl: null, view: 'project', section: 'cards', version: '' };
   try { state.version = chrome.runtime.getManifest().version; } catch (e) {}
   try {
-    const local = await chrome.storage.local.get(['panelCollapsed', 'cache', 'panelView']);
+    const local = await chrome.storage.local.get(['panelCollapsed', 'cache', 'panelView', 'panelSection']);
     state.collapsed = !!local.panelCollapsed;
     state.data = local.cache || null;
     state.view = local.panelView === 'card' ? 'card' : 'project';
+    state.section = local.panelSection === 'budget' ? 'budget' : 'cards';
   } catch (e) {}
   const link = Array.from(document.querySelectorAll('a[href]')).find((x) => /rnd\.krs\.co\.kr/i.test(x.href));
   state.rndUrl = link ? link.href : null;
@@ -97,6 +98,7 @@
       else if (act === 'toggle') { ev.preventDefault(); state.collapsed = !state.collapsed; safe(() => chrome.storage.local.set({ panelCollapsed: state.collapsed })); draw(); }
       else if (act === 'prj') { ev.preventDefault(); const k = btn.dataset.prj; if (state.expanded.has(k)) state.expanded.delete(k); else state.expanded.add(k); draw(); }
       else if (act === 'view') { ev.preventDefault(); state.view = btn.dataset.view === 'card' ? 'card' : 'project'; safe(() => chrome.storage.local.set({ panelView: state.view })); draw(); }
+      else if (act === 'section') { ev.preventDefault(); state.section = btn.dataset.section === 'budget' ? 'budget' : 'cards'; safe(() => chrome.storage.local.set({ panelSection: state.section })); draw(); }
       else if (act === 'claim') { if (ev.target.closest('a')) return; ev.preventDefault(); if (btn.dataset.href) window.open(btn.dataset.href, '_blank', 'noopener'); }
     } catch (e) { showStale(); }
   });
