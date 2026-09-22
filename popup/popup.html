@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>R&D ERP 현황</title>
+<link rel="stylesheet" href="../lib/panel.css">
+<style>
+  body { margin: 0; width: 460px; background: #fff; font: 13px/1.45 -apple-system, "Segoe UI", "Malgun Gothic", "맑은 고딕", Roboto, sans-serif; }
+  .toolbar { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid #e1e6ee; background: #f7f9fc; }
+  .toolbar a, .toolbar button { flex: 1; text-align: center; padding: 6px 4px; border: 1px solid #c9d1dc; border-radius: 6px; background: #fff; color: #1f4e9c; text-decoration: none; font: inherit; cursor: pointer; }
+  .toolbar a:hover, .toolbar button:hover { background: #eef3fa; }
+</style>
+</head>
+<body>
+<div id="krext-panel" class="krext-panel krext-popup"></div>
+<div class="toolbar">
+  <a href="https://eclass.krs.co.kr/eClassVer4/Home/Index" target="_blank" rel="noopener">eClass 열기</a>
+  <a id="rndLink" href="https://rnd.krs.co.kr/rderp_layoutMain.act" target="_blank" rel="noopener">R&amp;D ERP 열기</a>
+  <button type="button" id="btnOptions">설정</button>
+</div>
+<script src="../lib/format.js"></script>
+<script src="../lib/render.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>
