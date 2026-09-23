@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "KR eClass + R&D ERP 현황",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "eClass 홈 화면에 R&D ERP(rnd.krs.co.kr)의 미승인내역, 과제별 카드미청구 내역, 과제집행비율(비목별 예산잔액, 예상 비용 계획), 과제 참여율(예비 참여율·기간 계획)과 HR System(hr.krs.co.kr) 급여명세서의 기본연봉·올해 연구수당(직급별 한도·잔여)을 표시하고, ERP 청구서(카드) 화면의 입력(예산·RCMS 기본값, 세목 빠른 선택, 첨부 드래그 앤 드롭)을 돕습니다.",
   "permissions": ["storage", "alarms", "scripting", "declarativeNetRequestWithHostAccess"],
   "host_permissions": ["https://rnd.krs.co.kr/*", "https://eclass.krs.co.kr/*", "https://hr.krs.co.kr/*"],
