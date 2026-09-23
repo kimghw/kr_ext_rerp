@@ -111,15 +111,13 @@
 .krext-toggle { margin-left: auto; display: inline-flex; border: 1px solid #c9d1dc; border-radius: 6px; overflow: hidden; }
 .krext-toggle a { padding: 1px 8px; font-size: 11px; color: #4b5563 !important; text-decoration: none !important; }
 .krext-toggle a.krext-on { background: #1f4e9c; color: #fff !important; }
-/* 구역 스위치: 카드미청구 ↔ 과제집행비율 */
-.krext-switch { display: inline-flex; border: 1px solid #c9d1dc; border-radius: 7px; overflow: hidden; background: #f7f9fc; }
+/* 구역 스위치: 카드미청구 ↔ 과제집행비율 — 연한 바탕(선택은 연파랑+남색 글자, 나머지는 흰색), 건수 배지는 바탕 없이 글자만 */
+.krext-switch { display: inline-flex; border: 1px solid #c9d1dc; border-radius: 7px; overflow: hidden; background: #fff; }
 .krext-switch a { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; font-size: 13px; font-weight: 700; color: #4b5563 !important; text-decoration: none !important; border-left: 1px solid #c9d1dc; }
 .krext-switch a:first-child { border-left: 0; }
-.krext-switch a:hover { background: #eef3fa; }
-.krext-switch a.krext-on { background: #1f4e9c; color: #fff !important; }
-.krext-switch a.krext-on .krext-badge { background: rgba(255,255,255,.22); color: #fff; }
-.krext-switch a.krext-on .krext-badge-hot { background: #8f2f3a; }
-.krext-panel.krext-inline .krext-switch a.krext-on .krext-badge-hot { background: #8f2f3a; color: #fff; }
+.krext-switch a:hover { background: #f3f6fb; }
+.krext-switch a.krext-on { background: #e3edfb; color: #1a5fb4 !important; }
+.krext-switch .krext-badge, .krext-switch .krext-badge-hot { background: transparent; color: inherit; padding: 0; min-width: 0; }
 /* 집행비율 막대 */
 .krext-prj-rate { flex: none; width: 108px; display: inline-flex; justify-content: flex-end; }
 .krext-rate { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }

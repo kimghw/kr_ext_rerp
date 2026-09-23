@@ -59,7 +59,8 @@
 
   /* ---------- 스타일 / 토스트 ---------- */
   const CSS = `
-.krext-qp{display:inline-flex;flex-wrap:wrap;gap:4px;margin-left:10px;vertical-align:middle;font-weight:400}
+/* vertical-align 6px: 버튼(12px 맑은 고딕, 패딩 3px, 테두리 1px)의 아랫변은 기준선보다 약 6.4px 아래이므로 그만큼 올려 "청구" 글자 아랫줄과 버튼 아랫변을 맞춘다 (소제목 글꼴·크기와 무관) */
+.krext-qp{display:inline-flex;flex-wrap:wrap;gap:4px;margin-left:10px;vertical-align:6px;font-weight:400}
 .krext-qp button{font:12px/1.2 "Malgun Gothic","맑은 고딕",sans-serif;padding:3px 9px;border:1px solid #9db3d6;border-radius:12px;background:#f3f7fd;color:#1f4e9c;cursor:pointer;white-space:nowrap}
 .krext-qp button:hover{background:#e2ecfa}
 .krext-qp button.krext-on{background:#1f4e9c;color:#fff;border-color:#1f4e9c}
