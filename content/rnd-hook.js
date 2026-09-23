@@ -3,7 +3,11 @@
   if (window.__krextHooked) return;
   window.__krextHooked = true;
 
-  /* ---- 딥링크: eClass 패널에서 연 rderp_layoutMain.act#krext=... 를 레이아웃의 탭으로 열기 ---- */
+  /* ---- 딥링크: eClass 패널에서 연 rderp_layoutMain.act#krext=... 를 레이아웃의 탭으로 열기 ----
+   * req.menuId 가 있으면 그 메뉴 ID로 바로 연다(청구서·과제정보).
+   * 없으면 로그인 사용자의 메뉴 트리(comm_0001_01_r005 → _urlToMenusMap, _jex_layout_global_var.menu)에서
+   * 화면 URL(req.open) → 메뉴 이름(req.menuName) 순으로 찾아 그 메뉴의 ID·URL로 열고(메뉴 ID는 사용자마다 다를 수 있음),
+   * 그래도 없으면 상단 메뉴(req.topMenuId, 예: 결재함 menu_id_7)를 클릭해 첫 하위 메뉴를 연다 */
   (function deepLink() {
     try {
       if (window !== window.top) return;
@@ -16,19 +20,37 @@
       const extra = [req.q || '', req.appr ? 'krext_appr=' + encodeURIComponent(req.appr) : '', req.card ? 'krext_card=' + encodeURIComponent(req.card) : ''].filter(Boolean).join('&');
       const title = req.title || '청구서(카드)';
       const started = Date.now();
-      const url = '/' + req.open + (extra ? '?' + extra : '');
+      const withQuery = (path) => (extra ? path + (path.includes('?') ? '&' : '?') + extra : path);
+      const url = withQuery('/' + req.open);
+      const ownUrl = (v) => String((v && (v.URL || v.url)) || '').replace(/^\//, '');
+      const norm = (s) => String(s || '').replace(/\s+/g, '');
+      /* 메뉴 트리에서 화면 URL → 메뉴 이름(공백 무시, 완전 일치 → 포함) 순으로 찾기 */
+      const findMenu = () => {
+        const byUrl = (window._urlToMenusMap && window._urlToMenusMap[req.open]) || [];
+        if (byUrl.length && byUrl[0].id) return byUrl[0];
+        if (!req.menuName) return null;
+        const leaves = [];
+        const walk = (arr) => { for (const v of arr || []) { if (!v) continue; if (v.sub && v.sub.length) walk(v.sub); else if (ownUrl(v) && v.id) leaves.push(v); } };
+        try { const g = window._jex_layout_global_var; walk(g && g.menu && g.menu.REC); } catch (e) {}
+        const want = norm(req.menuName);
+        return leaves.find((v) => norm(v.name) === want) || leaves.find((v) => norm(v.name).includes(want)) || null;
+      };
       const timer = setInterval(() => {
         try {
           const menusReady = typeof window.manualYN !== 'undefined' && window._accessibleMenuMapReady;
-          if (menusReady && req.menuId && typeof window.openTab === 'function') {          // ERP 메인의 카드미청구 팝업과 같은 방식
+          const canOpen = typeof window.openTab === 'function';
+          if (menusReady && req.menuId && canOpen) {          // ERP 메인의 카드미청구 팝업과 같은 방식
             clearInterval(timer);
             window.openTab(req.menuId, title, url);
-          } else if (menusReady && typeof window.openTabWithAuth === 'function') {
-            clearInterval(timer);
-            window.openTabWithAuth(title, req.open, extra);
+          } else if (menusReady && canOpen) {
+            const menu = findMenu();
+            const top = !menu && req.topMenuId ? document.getElementById(req.topMenuId) : null;
+            if (menu) { clearInterval(timer); window.openTab(menu.id, title, withQuery('/' + ownUrl(menu))); }   // 메뉴 자신의 URL(고유 쿼리 포함)에 요청 쿼리를 덧붙임
+            else if (top) { clearInterval(timer); top.click(); }
+            else if (typeof window.openTabWithAuth === 'function') { clearInterval(timer); window.openTabWithAuth(title, req.open, extra); }   // 권한 없음 안내는 레이아웃이 표시
           } else if (Date.now() - started > 30000) {
             clearInterval(timer);
-            if (typeof window.openTab === 'function') window.openTab(req.menuId || '', title, url);
+            if (canOpen) window.openTab(req.menuId || '', title, url);
           }
         } catch (e) { clearInterval(timer); }
       }, 400);
