@@ -102,7 +102,7 @@
     const res = await chrome.runtime.sendMessage({ type: 'getData', force: true });
     await loadProjects(); await loadIssued();
     if (res && res.error) setStatus('prjStatus', '오류: ' + res.error, true);
-    else if (res && res.loginRequired) setStatus('prjStatus', 'R&D ERP 로그인이 필요합니다. 로그인 후 다시 누르세요.', true);
+    else if (res && res.loginRequired) setStatus('prjStatus', 'R&D ERP 로그인이 필요합니다. eClass의 R&D ERP 메뉴를 클릭해서 로그인한 뒤 다시 누르세요.', true);
     else setStatus('prjStatus', '불러왔습니다.');
   });
   $('btnPrjAll').addEventListener('click', () => { $('prjList').querySelectorAll('input[type=checkbox][data-prj]').forEach((cb) => { cb.checked = true; cb.dispatchEvent(new Event('change')); }); });
@@ -182,7 +182,7 @@
     const res = await chrome.runtime.sendMessage({ type: 'getData', force: true });
     await loadBgtItems();
     if (res && res.error) setStatus('bgtStatus', '오류: ' + res.error, true);
-    else if (res && res.loginRequired) setStatus('bgtStatus', 'R&D ERP 로그인이 필요합니다. 로그인 후 다시 누르세요.', true);
+    else if (res && res.loginRequired) setStatus('bgtStatus', 'R&D ERP 로그인이 필요합니다. eClass의 R&D ERP 메뉴를 클릭해서 로그인한 뒤 다시 누르세요.', true);
     else setStatus('bgtStatus', '불러왔습니다.');
   });
 
@@ -234,7 +234,7 @@
     const res = await chrome.runtime.sendMessage({ type: 'getData', force: true });
     await loadIssued();
     if (res && res.error) setStatus('issuedStatus', '오류: ' + res.error, true);
-    else if (res && res.loginRequired) setStatus('issuedStatus', 'R&D ERP 로그인이 필요합니다. 로그인 후 다시 누르세요.', true);
+    else if (res && res.loginRequired) setStatus('issuedStatus', 'R&D ERP 로그인이 필요합니다. eClass의 R&D ERP 메뉴를 클릭해서 로그인한 뒤 다시 누르세요.', true);
     else setStatus('issuedStatus', '불러왔습니다.');
   });
   $('btnIssuedReset').addEventListener('click', () => { overrides = {}; renderIssued(); });

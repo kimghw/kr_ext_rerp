@@ -16,7 +16,7 @@ function updateBadge(data) {
     if (data.loginRequired) {
       chrome.action.setBadgeText({ text: '!' });
       chrome.action.setBadgeBackgroundColor({ color: '#8a8f98' });
-      chrome.action.setTitle({ title: 'R&D ERP 현황 - 로그인 필요' });
+      chrome.action.setTitle({ title: 'R&D ERP 현황 - 로그인 필요 (eClass의 R&D ERP 메뉴를 클릭해서 로그인해주세요)' });
       return;
     }
     // 배지 = 카드미청구 + 미승인내역(보완요청 + 신청). 미승인내역은 실시간값, 없으면 메인화면 방문 시 읽은 스냅샷

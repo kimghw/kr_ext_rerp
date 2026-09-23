@@ -8,7 +8,7 @@ eClass 홈(`https://eclass.krs.co.kr/eClassVer4/Home/Index`)에 R&D ERP(`https:/
 1. Chrome 주소창에 `chrome://extensions` 입력 → 우측 상단 **개발자 모드** 켜기
 2. **압축해제된 확장 프로그램을 로드합니다** → 이 폴더(`E:\dev\kr_ext_rerp`) 선택
 3. R&D ERP에 로그인된 상태(eClass에서 링크로 한 번 들어가 두면 됨)에서 eClass 홈을 열면 우측 상단에 패널이 뜹니다.
-   - 로그인 세션이 없으면 패널에 "R&D ERP 로그인이 필요합니다"가 표시됩니다. R&D ERP를 열어 로그인 후 ↻를 누르세요.
+   - 로그인 세션이 없으면 패널에 "R&D ERP 로그인이 필요합니다"가 표시됩니다. R&D ERP 주소를 바로 열면 세션이 만들어지지 않으니, 처음에는 eClass 화면의 R&D ERP 메뉴를 클릭해서 로그인한 뒤 ↻를 누르세요.
 
 ## 표시 내용
 
