@@ -102,9 +102,19 @@ async function injectBridgeIntoOpenErpTabs() {
   if (tabs.length) await new Promise((r) => setTimeout(r, 1500));   // 브리지의 rndUser 메시지가 저장될 시간
 }
 
+/* 이미 열려 있는 R&D ERP 탭에 청구서(카드) 입력 도우미를 넣는다 (모든 프레임). 설치/재로드 뒤 ERP 화면을 다시 열지 않아도 되게 함.
+ * 스크립트는 다시 주입되면 이전 것을 스스로 멈추고 요소를 걷어낸 뒤 새로 붙인다 */
+async function injectClaimHelperIntoOpenErpTabs() {
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({ url: ['https://rnd.krs.co.kr/*'] }); } catch (e) { return; }
+  await Promise.all((tabs || []).map((t) =>
+    chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ['lib/settings.js', 'content/rnd-claim.js'] }).catch(() => {})));
+}
+
 chrome.runtime.onInstalled.addListener(() => {   // 설치/업데이트/재로드 시 이전 캐시를 버리고 새로 조회
   chrome.storage.local.remove(CACHE_KEY)
     .then(injectBridgeIntoOpenErpTabs)
+    .then(injectClaimHelperIntoOpenErpTabs)
     .then(() => { scheduleAlarm(); refresh(true).catch(() => {}); });
   // 열려 있는 eClass 홈 탭은 옛 콘텐츠 스크립트가 남아 통신이 끊기므로 새로고침
   try {

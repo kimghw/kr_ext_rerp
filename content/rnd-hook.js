@@ -67,6 +67,16 @@
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
     } catch (e) {}
   })();
+  /* ---- 파일등록 팝업에서 청구서 입력 도우미(rnd-claim.js)가 "업로드"를 자동으로 누를 때: 그 직후 8초 동안 confirm() 을 자동 확인 ---- */
+  (function autoConfirm() {
+    try {
+      let until = 0;
+      document.addEventListener('krext-auto-confirm', () => { until = Date.now() + 8000; });
+      const OC = window.confirm;
+      window.confirm = function () { if (Date.now() < until) return true; return OC.apply(this, arguments); };
+    } catch (e) {}
+  })();
+
   const MAX_REQ = 3000, MAX_RES = 8000;
   const isJct = (u) => /\.jct(\?|$)/i.test(String(u || ''));
   const svcOf = (u) => String(u || '').split('?')[0].split('/').pop().replace(/\.jct$/i, '');

@@ -319,6 +319,13 @@
     $('hideZeroProjects').checked = !!s.hideZeroProjects;
     $('projectStatusKeyword').value = s.projectStatusKeyword == null ? '진행' : s.projectStatusKeyword;
     $('rndUrl').value = s.rndUrl || '';
+    const ch = Object.assign({}, S.DEFAULTS.claimHelper, s.claimHelper || {});
+    $('chEnabled').checked = ch.enabled !== false;
+    $('chDefaultBudget').value = ch.defaultBudget || '';
+    $('chDefaultRcms').value = ch.defaultRcms || '';
+    $('chDragDrop').checked = ch.dragDrop !== false;
+    $('chQuickPicks').value = (Array.isArray(ch.quickPicks) ? ch.quickPicks : []).join('\n');
+    toggleClaimBox();
     bgtInclude = Object.assign({}, s.budgetItemInclude || {});
     bgtDefaultKeys = (s.budgetExcludeDefault || []).map(normNm).filter(Boolean);
     renderBgtItems();
@@ -382,6 +389,13 @@
       myEmpNo: $('myEmpNo').value.trim(),
       myName: $('myName').value.trim(),
       rndUrl: $('rndUrl').value.trim() || S.DEFAULTS.rndUrl,
+      claimHelper: {
+        enabled: $('chEnabled').checked,
+        defaultBudget: $('chDefaultBudget').value.trim(),
+        defaultRcms: $('chDefaultRcms').value.trim(),
+        dragDrop: $('chDragDrop').checked,
+        quickPicks: $('chQuickPicks').value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)
+      },
       unapproved: {
         serviceId: $('unapServiceId').value.trim(),
         input: $('unapInput').value.trim() || '{}',
@@ -417,6 +431,14 @@
     updateMonitorSummary();
   }
   document.querySelectorAll('input[name=cardFilterMode]').forEach((r) => r.addEventListener('change', toggleCardList));
+
+  /* 청구서(카드) 입력 도우미: 사용 안 함이면 세부 항목을 흐리게 */
+  function toggleClaimBox() {
+    const on = $('chEnabled').checked;
+    $('chBox').style.opacity = on ? '1' : '.45';
+    $('chBox').style.pointerEvents = on ? '' : 'none';
+  }
+  $('chEnabled').addEventListener('change', toggleClaimBox);
 
   $('form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
