@@ -232,4 +232,40 @@ a.krext-chip:hover { filter: brightness(.94); }
 .krext-pay-form input:focus { outline: none; border-color: #4d8fe6; box-shadow: 0 0 0 2px rgba(77,143,230,.2); }
 .krext-pay-form input[data-pay="name"] { flex: 1 1 110px; min-width: 90px; }
 .krext-pay-form input[data-pay="amt"] { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+/* 과제 참여율: 예비 참여율(참여 계획) 줄 · 입력 폼 · 기간 달력 (lib/part.js) */
+.krext-part-table td.krext-part-nm .krext-plus-btn { width: 16px; height: 16px; margin-left: 4px; font-size: 12px; }
+.krext-part-table tr.krext-part-plan td { background: #fbfbfe; border-bottom: 1px dotted #e3e6ef; font-size: 11.5px; padding-top: 2px; padding-bottom: 2px; }
+.krext-part-table tr.krext-part-plan td.krext-plan-rate { color: #6b5cc4; font-weight: 700; }
+.krext-part-at { margin-left: 4px; font-size: 11px; color: #6b7480; white-space: nowrap; }
+.krext-part-at.krext-red { color: #d7263d; font-weight: 600; }
+.krext-part-table tr.krext-part-form td, .krext-part-table tr.krext-part-add td { background: #fbfbfe; }
+.krext-part-table tr.krext-part-add td { font-size: 11.5px; padding-top: 3px; padding-bottom: 3px; }
+.krext-part-table tr.krext-part-add .krext-plus-btn { margin-left: 0; }
+.krext-part-table tfoot tr.krext-part-planfoot td { color: #4a3d8f; border-top: 1px dotted #d9d2f2; }
+.krext-part-frm { position: relative; }
+.krext-part-frm input[data-part="name"] { flex: 1 1 140px; min-width: 110px; }
+.krext-part-frm input[data-part="rate"] { width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+.krext-part-cal-btn { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #222; font-family: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.krext-part-cal-btn:hover { background: #f3f6fb; }
+.krext-part-cal-btn.krext-on { border-color: #4d8fe6; box-shadow: 0 0 0 2px rgba(77,143,230,.2); }
+.krext-part-cal-btn.krext-part-cal-empty { color: #6b7480; }
+.krext-part-cal-btn svg { width: 13px; height: 13px; color: #1a5fb4; }
+/* 달력 팝업: 폼 왼쪽 아래에 띄움 (패널이 스크롤 영역이면 그 안에서 늘어남) */
+.krext-cal { position: absolute; left: 0; top: 100%; z-index: 30; width: 236px; margin-top: 4px; padding: 8px; border: 1px solid #c9d1dc; border-radius: 8px; background: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.16); font-size: 12px; color: #222; text-align: left; }
+.krext-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.krext-cal-head b { font-size: 12.5px; }
+.krext-cal-head button { width: 24px; height: 22px; padding: 0; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #1a5fb4; font-size: 14px; line-height: 1; cursor: pointer; }
+.krext-cal-head button:hover { background: #eef3fa; }
+.krext-cal-hint { font-size: 11px; color: #6b7480; margin-bottom: 4px; }
+.krext-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.krext-cal-wd { text-align: center; font-size: 10.5px; color: #6b7480; padding: 2px 0; }
+.krext-cal-d { height: 24px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #222; font-family: inherit; font-size: 12px; line-height: 1; cursor: pointer; font-variant-numeric: tabular-nums; }
+.krext-cal-d:hover { background: #eef3fa; border-color: #b7cdf0; }
+.krext-cal-d.krext-cal-out { color: #b0b7c3; }
+.krext-cal-d.krext-cal-today { border-color: #c9d1dc; font-weight: 700; }
+.krext-cal-d.krext-cal-in { background: #e6e0fa; color: #4a3d8f; }
+.krext-cal-d.krext-cal-sel { background: #6b5cc4; color: #fff; font-weight: 700; }
+.krext-cal-foot { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.krext-cal-foot button { height: 22px; padding: 0 7px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #1a5fb4; font-family: inherit; font-size: 11px; cursor: pointer; }
+.krext-cal-foot button:hover { background: #eef3fa; }
 @media (max-width: 900px) { .krext-panel.krext-float { width: calc(100vw - 32px); right: 16px; } }

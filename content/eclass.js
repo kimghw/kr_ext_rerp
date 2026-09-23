@@ -71,12 +71,14 @@
   } catch (e) {}
   try { state.plans = await KRX_PLAN.load(); } catch (e) {}
   try { state.payPlans = await KRX_PAY.load(); } catch (e) {}   // 받기 예정 연구수당 (lib/pay.js)
+  try { state.partPlans = await KRX_PART.load(); } catch (e) {}   // 예비 참여율(참여 계획) (lib/part.js)
   const link = Array.from(document.querySelectorAll('a[href]')).find((x) => /rnd\.krs\.co\.kr/i.test(x.href));
   state.rndUrl = link ? link.href : null;
 
   const draw = () => KRX_RENDER.render(host, state);
   KRX_PLAN.bind(host, state, draw);   // 과제집행비율 표의 예상 비용 입력(＋/수정/삭제) 처리
   KRX_PAY.bind(host, state, draw);    // 급여·연구수당 구역의 받기 예정 연구수당 입력(＋/수정/삭제) 처리
+  KRX_PART.bind(host, state, draw);   // 과제 참여율 표의 참여 계획 입력(＋/수정/삭제, 기간 달력) 처리
 
   /* 확장이 새로고침/업데이트되면 이 스크립트는 확장과 연결이 끊긴다(Extension context invalidated). 예외 대신 안내 표시 */
   const alive = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; } };
