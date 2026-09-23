@@ -1,5 +1,5 @@
 /* 서비스워커: 데이터 수집/캐시, 배지, 캡처 로그 저장, 주기 갱신 */
-importScripts('lib/format.js', 'lib/settings.js', 'lib/rnd-api.js');
+importScripts('lib/format.js', 'lib/settings.js', 'lib/rnd-api.js', 'lib/hr-api.js');
 
 const CACHE_KEY = 'cache';
 const CAPTURE_KEY = 'captureLog';
@@ -53,7 +53,7 @@ async function refresh(force) {
       const ttl = Math.max(1, KRX_FMT.num(settings.refreshMinutes) || 10) * 60000;
       // 오류로 끝난 결과(예: 재로드 직후 일시적 네트워크 오류)는 TTL 과 상관없이 다시 조회
       if (!force && cache && cache.ts && !cache.error && Date.now() - cache.ts < ttl) { updateBadge(cache); return cache; }
-      requestHrCollect(force).catch(() => {});   // 열려 있는 HR 탭이 있으면 급여명세서도 함께 갱신 (결과는 hrPay 메시지로 따로 반영, 주기 판단은 탭 쪽에서)
+      collectHr(force).catch(() => {});   // HR 급여명세서도 함께 갱신 (백그라운드 직접 호출, 안 되면 열려 있는 HR 탭. 결과는 hrPay 로 따로 반영)
       let data = await KRX_API.collect(settings);
       if (gen !== settingsGen) { force = true; continue; }   // 조회 중 설정이 바뀜(예: 과제 제외) → 이 결과는 캐시하지 않고 다시 조회
       if (data.memberFilter === 'no-id' && !data.loginRequired) {
@@ -126,20 +126,76 @@ async function injectHrIntoOpenTabs() {
   await Promise.all((tabs || []).map((t) =>
     chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['lib/format.js', 'lib/settings.js', 'lib/hr-api.js', 'content/hr-pay.js'] }).catch(() => {})));
 }
-/* 열려 있는 HR System 탭에 급여명세서 수집(hrCollect)을 요청한다. HR API 는 확장 출처에서 부르면 본문 없는 200 을 주므로(CORS) 탭 안에서만 호출할 수 있다.
- * 수집 결과는 탭이 hrPay 메시지로 따로 보내온다. 첫 탭이 성공하면 나머지는 건너뜀 */
+/* 열려 있는 HR System 탭에 급여명세서 수집(hrCollect)을 요청한다 (백그라운드 직접 호출이 안 될 때의 대체 경로).
+ * 수집 결과는 탭이 hrPay 메시지로 따로 보내온다. 첫 탭이 성공하면 나머지는 건너뜀. 반환: { ok, via:'tab', tabs, … 탭의 응답 } */
 async function requestHrCollect(force, all) {
   let tabs = [];
-  try { tabs = await chrome.tabs.query({ url: ['https://hr.krs.co.kr/*'] }); } catch (e) { return { tabs: 0, results: [] }; }
-  const out = { tabs: (tabs || []).length, results: [] };
+  try { tabs = await chrome.tabs.query({ url: ['https://hr.krs.co.kr/*'] }); } catch (e) { tabs = []; }
+  let last = null;
   for (const t of tabs || []) {
     try {
       const r = await chrome.tabs.sendMessage(t.id, { type: 'hrCollect', force: !!force, all: !!all }, { frameId: 0 });
-      out.results.push(r || { error: '응답 없음' });
+      last = r || { error: '응답 없음' };
       if (r && r.ok) break;
-    } catch (e) { out.results.push({ error: String((e && e.message) || e) }); }
+    } catch (e) { last = { error: String((e && e.message) || e) }; }
   }
-  return out;
+  return Object.assign({ ok: false, via: 'tab', tabs: (tabs || []).length }, last || { error: (tabs || []).length ? '응답 없음' : 'HR System 탭 없음' });
+}
+
+/* HR API 를 백그라운드에서 직접 부르기 위한 DNR 규칙: 이 확장이 hr.krs.co.kr 에 보내는 XHR/fetch 의 Referer 를 HR 로 바꾼다.
+ * HR 서버는 Referer 가 자기 사이트가 아니면(확장 출처·다른 사이트) 본문 없는 200 을 돌려준다 — Origin 은 보지 않음 (2026-09-23 확인).
+ * initiatorDomains 로 이 확장이 보낸 요청에만 적용해 다른 사이트의 HR 요청에는 영향이 없게 한다. 동적 규칙이라 브라우저를 다시 켜도 남는다 */
+const HR_RULE_ID = 9101;
+let hrRulesReady = false;
+async function ensureHrRules() {
+  if (hrRulesReady) return true;
+  try {
+    const rule = { id: HR_RULE_ID, priority: 1,
+      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'referer', operation: 'set', value: KRX_HR_API.HOME + '/' }] },
+      condition: { urlFilter: '||hr.krs.co.kr/', resourceTypes: ['xmlhttprequest'], initiatorDomains: [chrome.runtime.id] } };
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [HR_RULE_ID], addRules: [rule] });
+    hrRulesReady = true;
+  } catch (e) { hrRulesReady = false; }
+  return hrRulesReady;
+}
+
+/* HR 급여명세서 수집 (백그라운드 직접 호출). HR 탭이 없어도 HR 로그인 세션(쿠키)이 살아 있으면 된다.
+ * force 가 아니면 저장값이 갱신 주기 안일 때 건너뜀, all 이면 모든 달을 다시 읽음.
+ * 사번: 저장된 hrPay.empNo → R&D ERP 사용자(rndUser) → 설정 myEmpNo. 사번을 모르거나 직접 호출이 실패하면(빈 응답 등) 열려 있는 HR 탭에 맡긴다.
+ * 로그인이 풀려 있으면(로그인 페이지로 리다이렉트) 탭도 같은 쿠키라 소용없으므로 status.loginRequired 로 기록만 한다 */
+let hrInflight = null;
+async function collectHr(force, all) {
+  if (hrInflight) return hrInflight;
+  hrInflight = (async () => {
+    const settings = await KRX_SETTINGS.load();
+    const hr = Object.assign({}, KRX_SETTINGS.DEFAULTS.hr || {}, settings.hr || {});
+    if (hr.enabled === false) return { ok: false, skipped: 'disabled' };
+    const store = await chrome.storage.local.get(['hrPay', 'rndUser']);
+    const cur = store.hrPay || {};
+    const ttl = Math.max(1, KRX_FMT.num(settings.refreshMinutes) || 10) * 60000;
+    if (!force && cur.ts && cur.source === 'api' && !(cur.status && (cur.status.loginRequired || cur.status.error)) && Date.now() - cur.ts < ttl) return { ok: false, skipped: 'fresh' };
+    const u = store.rndUser || {};
+    const empNo = [cur.empNo, u.empNo, u.userId, settings.myEmpNo].map((v) => String(v || '').trim()).find((v) => KRX_HR_API.EMP_RE.test(v)) || '';
+    if (!empNo) return await requestHrCollect(force, all);   // 사번을 모름 → HR 탭(프로필에서 읽음)에 맡김
+    await ensureHrRules();
+    try {
+      KRX_HR_API.setBase(KRX_HR_API.HOME);
+      const patch = await KRX_HR_API.collect({ empNo, known: cur.years || {}, years: [new Date().getFullYear()], force: !!all, page: 'background' });
+      patch.status = { ts: Date.now(), ok: true, via: 'background' };
+      const merged = await mergeHrPay(patch); await patchCacheHrPay(merged);
+      return { ok: true, via: 'background', scan: patch.scan, grade: patch.grade || '', empNo, months: patch.lists.reduce((s, l) => s + l.total, 0) };
+    } catch (e) {
+      const kind = e && e.kind, msg = String((e && e.message) || e);
+      if (kind !== 'login') {   // 빈 응답(규칙 미적용)·네트워크·HTTP 오류 → HR 탭이 있으면 그쪽에서 (탭은 프로필의 사번으로 다시 시도)
+        const viaTab = await requestHrCollect(force, all);
+        if (viaTab.ok) return viaTab;
+      }
+      const status = { ts: Date.now(), error: msg, loginRequired: kind === 'login', via: 'background' };
+      const merged = await mergeHrPay({ status }); await patchCacheHrPay(merged);
+      return { ok: false, via: 'background', error: msg, loginRequired: status.loginRequired };
+    }
+  })().finally(() => { hrInflight = null; });
+  return hrInflight;
 }
 
 /* HR 급여명세서 수집(content/hr-pay.js → lib/hr-api.js) 병합 → storage.local.hrPay
@@ -186,6 +242,7 @@ async function patchCacheHrPay(hrPay) {
 
 chrome.runtime.onInstalled.addListener(() => {   // 설치/업데이트/재로드 시 이전 캐시를 버리고 새로 조회
   chrome.storage.local.remove([CACHE_KEY, 'hrDiag'])
+    .then(ensureHrRules)
     .then(injectBridgeIntoOpenErpTabs)
     .then(injectClaimHelperIntoOpenErpTabs)
     .then(injectHrIntoOpenTabs)
@@ -198,7 +255,7 @@ chrome.runtime.onInstalled.addListener(() => {   // 설치/업데이트/재로�
     });
   } catch (e) {}
 });
-chrome.runtime.onStartup.addListener(() => { scheduleAlarm(); getCache().then(updateBadge); });
+chrome.runtime.onStartup.addListener(() => { ensureHrRules(); scheduleAlarm(); getCache().then(updateBadge); });
 chrome.alarms.onAlarm.addListener((a) => { if (a.name === ALARM) refresh(true).catch(() => {}); });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -215,7 +272,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'jctCaptured': await appendCapture(msg.entry, sender); return { ok: true };
       case 'unapprovedSnapshot': await chrome.storage.local.set({ unapprovedSnapshot: msg.snapshot }); return { ok: true };
       case 'hrPay': { const merged = await mergeHrPay(msg.patch || {}); await patchCacheHrPay(merged); return { ok: true }; }
-      case 'hrCollectNow': return await requestHrCollect(true, !!msg.all);   // 설정 페이지: 열려 있는 HR 탭에서 지금 수집
+      case 'hrCollectNow': return await collectHr(true, !!msg.all);   // 설정 페이지: 지금 수집 (백그라운드 직접, 안 되면 HR 탭)
       case 'clearHrPay': await chrome.storage.local.remove('hrPay'); await patchCacheHrPay(null); return { ok: true };
       case 'rndUser': {
         const u = msg.user || {};

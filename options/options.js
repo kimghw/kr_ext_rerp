@@ -544,18 +544,15 @@
     $('hrSummary').textContent = on ? `${year}년 ${n}개월 수집${hp.grade ? ` · ${hp.grade}` : ''}` : '사용 안 함';
   }
   $('hrEnabled').addEventListener('change', showHr);
-  // 열려 있는 HR 탭에 수집 요청 (확장 자체에서는 HR API 를 부를 수 없음). 모든 달을 다시 읽는다
+  // 지금 수집 (백그라운드 직접 호출, 안 되면 열려 있는 HR 탭). 모든 달을 다시 읽는다
   $('btnHrCollect').addEventListener('click', async () => {
-    setStatus('hrStatus', 'HR System 탭에 수집을 요청하는 중…');
+    setStatus('hrStatus', 'HR System 급여명세서를 읽는 중…');
     let r = null;
     try { r = await chrome.runtime.sendMessage({ type: 'hrCollectNow', all: true }); } catch (e) { r = null; }
-    if (!r || !r.tabs) { setStatus('hrStatus', 'HR System(hr.krs.co.kr) 탭이 열려 있지 않습니다. HR 에 로그인한 탭을 열어 두면 자동으로 수집됩니다.', true); showHr(); return; }
-    const ok = (r.results || []).find((x) => x && x.ok);
-    if (ok) setStatus('hrStatus', `수집했습니다 — ${ok.scan ? `급여 ${ok.months || 0}건 중 지급내역 ${ok.scan.done}건 읽음` : ''}${ok.grade ? ` · 직급 ${ok.grade}` : ' · 직급 없음'}`);
-    else {
-      const e = (r.results || []).find((x) => x && (x.error || x.skipped)) || {};
-      setStatus('hrStatus', e.loginRequired ? 'HR System 로그인이 필요합니다. HR 탭에서 로그인하세요.' : (e.error || (e.skipped ? `건너뜀: ${e.skipped}` : '응답 없음 (HR 탭을 새로고침한 뒤 다시 시도)')), true);
-    }
+    if (r && r.ok) setStatus('hrStatus', `수집했습니다 (${r.via === 'tab' ? 'HR 탭에서' : '백그라운드 직접 호출'}) — ${r.scan ? `급여 ${r.months || 0}건 중 지급내역 ${r.scan.done}건 읽음` : ''}${r.grade ? ` · 직급 ${r.grade}` : ' · 직급 없음'}`);
+    else if (r && r.loginRequired) setStatus('hrStatus', 'HR System 로그인이 풀려 있습니다. HR System 에 로그인하면 자동으로 다시 수집됩니다.', true);
+    else if (r && r.skipped) setStatus('hrStatus', `건너뜀: ${r.skipped}`, true);
+    else setStatus('hrStatus', (r && r.error) ? `수집 실패: ${r.error}` : '응답 없음', true);
     showHr();
   });
   $('btnHrClear').addEventListener('click', async () => {
