@@ -221,7 +221,10 @@ a.krext-chip:hover { filter: brightness(.94); }
 /* 급여·연구수당은 기본 숨김: 버튼 하나만 보이고 누르면 펼침 (급여 정보라 화면에 늘 띄우지 않음) */
 .krext-pay-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid #c9d1dc; border-radius: 7px; background: #fff; color: #1a5fb4; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .krext-pay-toggle:hover { background: #eef3fa; border-color: #b7cdf0; }
-.krext-pay .krext-sec-title .krext-pay-toggle { margin-left: auto; padding: 1px 8px; font-size: 11px; font-weight: 400; }
+.krext-pay .krext-sec-title .krext-pay-toggle { padding: 1px 8px; font-size: 11px; font-weight: 400; }
+.krext-pay .krext-sec-title .krext-note + .krext-pay-toggle { margin-left: auto; }   /* 제목 오른쪽에 ↻ · 숨기기 */
+.krext-pay .krext-sec-title .krext-pay-toggle + .krext-pay-toggle { margin-left: 4px; }
+.krext-pay-toggle:disabled { opacity: .5; cursor: default; }
 .krext-pay-plans { flex-basis: 100%; margin-top: 4px; padding: 6px 8px; border: 1px dashed #d9d3f0; border-radius: 8px; background: #faf9ff; font-size: 12px; }
 .krext-pay-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-weight: 600; color: #4b5563; }
 .krext-pay-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-top: 1px dotted #e3ddf5; color: #4b5563; }

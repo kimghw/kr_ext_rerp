@@ -35,6 +35,12 @@
     state.loading = false; draw();
     if (state.data && state.data.settings && state.data.settings.rndUrl) document.getElementById('rndLink').href = state.data.settings.rndUrl;
   }
+  // 백그라운드가 캐시를 바꾸면(급여·연구수당 보기 클릭 → HR 수집 결과 등) 바로 반영 (content/eclass.js 와 같은 방식)
+  try {
+    chrome.storage.onChanged.addListener((ch, area) => {
+      try { if (area === 'local' && ch.cache && ch.cache.newValue) { state.data = ch.cache.newValue; if (!state.loading) draw(); } } catch (e) {}
+    });
+  } catch (e) {}
   draw();
   load(false);
 })();

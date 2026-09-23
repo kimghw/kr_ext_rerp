@@ -53,7 +53,6 @@ async function refresh(force) {
       const ttl = Math.max(1, KRX_FMT.num(settings.refreshMinutes) || 10) * 60000;
       // 오류로 끝난 결과(예: 재로드 직후 일시적 네트워크 오류)는 TTL 과 상관없이 다시 조회
       if (!force && cache && cache.ts && !cache.error && Date.now() - cache.ts < ttl) { updateBadge(cache); return cache; }
-      collectHr(force).catch(() => {});   // HR 급여명세서도 함께 갱신 (백그라운드 직접 호출, 안 되면 열려 있는 HR 탭. 결과는 hrPay 로 따로 반영)
       let data = await KRX_API.collect(settings);
       if (gen !== settingsGen) { force = true; continue; }   // 조회 중 설정이 바뀜(예: 과제 제외) → 이 결과는 캐시하지 않고 다시 조회
       if (data.memberFilter === 'no-id' && !data.loginRequired) {
@@ -160,7 +159,8 @@ async function ensureHrRules() {
 }
 
 /* HR 급여명세서 수집 (백그라운드 직접 호출). HR 탭이 없어도 HR 로그인 세션(쿠키)이 살아 있으면 된다.
- * force 가 아니면 저장값이 갱신 주기 안일 때 건너뜀, all 이면 모든 달을 다시 읽음.
+ * 주기적으로 돌지 않고, 패널의 급여·연구수당 보기/↻ 나 설정 페이지의 지금 수집(hrCollectNow)을 눌렀을 때만 읽는다 (급여는 한 달에 한 번 바뀌므로).
+ * force 가 아니면 저장값이 갱신 주기 안일 때 건너뜀, all 이면 모든 달을 다시 읽음 (아니면 목록만 다시 받고 새로 생기거나 소득합계가 바뀐 달만 지급내역 조회).
  * 사번: 저장된 hrPay.empNo → R&D ERP 사용자(rndUser) → 설정 myEmpNo. 사번을 모르거나 직접 호출이 실패하면(빈 응답 등) 열려 있는 HR 탭에 맡긴다.
  * 로그인이 풀려 있으면(로그인 페이지로 리다이렉트) 탭도 같은 쿠키라 소용없으므로 status.loginRequired 로 기록만 한다 */
 let hrInflight = null;
@@ -272,7 +272,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'jctCaptured': await appendCapture(msg.entry, sender); return { ok: true };
       case 'unapprovedSnapshot': await chrome.storage.local.set({ unapprovedSnapshot: msg.snapshot }); return { ok: true };
       case 'hrPay': { const merged = await mergeHrPay(msg.patch || {}); await patchCacheHrPay(merged); return { ok: true }; }
-      case 'hrCollectNow': return await collectHr(true, !!msg.all);   // 설정 페이지: 지금 수집 (백그라운드 직접, 안 되면 HR 탭)
+      case 'hrCollectNow': return await collectHr(true, !!msg.all);   // 패널 급여·연구수당 보기/↻, 설정 페이지 지금 수집 (백그라운드 직접, 안 되면 HR 탭)
       case 'clearHrPay': await chrome.storage.local.remove('hrPay'); await patchCacheHrPay(null); return { ok: true };
       case 'rndUser': {
         const u = msg.user || {};

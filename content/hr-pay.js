@@ -1,6 +1,6 @@
-/* hr.krs.co.kr (최상위 프레임): HR System 급여명세서를 API 로 수집해 백그라운드(storage.local.hrPay)에 넘긴다 — lib/hr-api.js
- * - HR 에 로그인된 탭이 열려 있으면 어느 화면이든(급여명세서를 열 필요 없음) 페이지 로드 때 한 번, 그 뒤엔 백그라운드가 갱신 주기마다 보내는 hrCollect 요청에 따라 수집.
- *   HR API 는 확장 출처에서 부르면 본문 없는 200 을 주므로(CORS) 이 탭 안에서만 호출할 수 있다
+/* hr.krs.co.kr (최상위 프레임): 백그라운드의 hrCollect 요청을 받으면 HR System 급여명세서를 API 로 수집해 hrPay 로 넘긴다 — lib/hr-api.js
+ * - 평소에는 백그라운드가 직접 호출(background.js collectHr)하고, 그것이 빈 응답 등으로 실패했을 때만 열려 있는 HR 탭에 요청이 온다 (같은 출처라 항상 호출 가능).
+ *   스스로 주기적으로 읽지는 않는다 (급여는 한 달에 한 번 바뀌고, 패널에서 급여·연구수당 보기를 누를 때 읽는다)
  * - 사번: 화면 좌측 프로필(#_profile_userId) → 저장된 hrPay.empNo → R&D ERP 사용자(rndUser) → 설정 myEmpNo
  * - 로그인 페이지(/hrm_admin/login)면 건너뛰고, 세션이 풀려 로그인으로 리다이렉트되면 hrPay.status.loginRequired 로 기록
  * 확장 재로드 후 다시 주입되면 이전 스크립트는 스스로 멈춘다 (rnd-claim.js 와 같은 방식) */
@@ -78,7 +78,4 @@
       return true;
     });
   } catch (e) {}
-  // 프로필(사번)이 그려진 뒤 시작. 로그인 직후 이동한 페이지에서는 새로 주입된 스크립트가 다시 실행된다
-  const start = () => { if (!stopped) setTimeout(() => { run('load', false).catch((e) => log('run error', e)); }, 800); };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
