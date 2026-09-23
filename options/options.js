@@ -380,6 +380,7 @@
     toggleClaimBox();
     const h = Object.assign({}, S.DEFAULTS.hr, s.hr || {});
     $('hrEnabled').checked = h.enabled !== false;
+    $('hrAutoLogin').checked = h.autoLogin !== false;
     $('hrGrade').value = String(h.grade || '').toUpperCase();
     $('hrRates').value = Object.entries(h.gradeRates || {}).map(([k, v]) => `${k}=${v}`).join('\n');
     $('hrBaseItem').value = h.baseItem || '';
@@ -458,6 +459,7 @@
       },
       hr: {
         enabled: $('hrEnabled').checked,
+        autoLogin: $('hrAutoLogin').checked,
         grade: $('hrGrade').value.trim().toUpperCase(),
         gradeRates: parseRates($('hrRates').value),
         baseItem: $('hrBaseItem').value.trim() || S.DEFAULTS.hr.baseItem,

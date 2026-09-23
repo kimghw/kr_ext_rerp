@@ -162,7 +162,42 @@ async function ensureHrRules() {
  * 주기적으로 돌지 않고, 패널의 급여·연구수당 보기/↻ 나 설정 페이지의 지금 수집(hrCollectNow)을 눌렀을 때만 읽는다 (급여는 한 달에 한 번 바뀌므로).
  * force 가 아니면 저장값이 갱신 주기 안일 때 건너뜀, all 이면 모든 달을 다시 읽음 (아니면 목록만 다시 받고 새로 생기거나 소득합계가 바뀐 달만 지급내역 조회).
  * 사번: 저장된 hrPay.empNo → R&D ERP 사용자(rndUser) → 설정 myEmpNo. 사번을 모르거나 직접 호출이 실패하면(빈 응답 등) 열려 있는 HR 탭에 맡긴다.
- * 로그인이 풀려 있으면(로그인 페이지로 리다이렉트) 탭도 같은 쿠키라 소용없으므로 status.loginRequired 로 기록만 한다 */
+ * 로그인이 풀려 있으면(로그인 페이지로 리다이렉트) 탭도 같은 쿠키라 소용없으므로, 설정 hr.autoLogin 이 켜져 있으면 hrAutoLogin 으로 HR 메인을 열어 SSO 자동 로그인 뒤 한 번 더 읽고,
+ * 그래도 안 되면 status.loginRequired(+tabOpened) 로 기록한다 */
+/* HR 로그인이 풀렸을 때 자동 재로그인: HR 메인 페이지를 열면 SSO 로 자동 로그인되므로, 비활성 탭으로 열고(이미 HR 탭이 있으면 그 탭을 그 주소로 이동)
+ * hr.krs.co.kr 로 돌아와 다 뜰 때까지 기다린 뒤 tryCollect 로 다시 읽는다. HR 은 SPA 라 주소만으로는 로그인 여부를 알 수 없어 API 응답으로 판단하고,
+ * 아직 로그인 리다이렉트면 2초 간격으로 제한 시간까지 재시도한다. 성공하면 이 함수가 연 탭은 닫고, 안 되면 탭을 그대로 두어 사용자가 거기서 로그인할 수 있게 한다(tabOpened).
+ * 반환: 성공 시 tryCollect 의 결과, 실패 시 { ok:false, error, kind, tabOpened } */
+const HR_AUTO_LOGIN_MS = 30000;
+async function hrAutoLogin(hrUrl, tryCollect) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let tab = null, created = false;
+  try {
+    const open = await chrome.tabs.query({ url: ['https://hr.krs.co.kr/*'] });
+    if (open && open.length) { tab = open[0]; await chrome.tabs.update(tab.id, { url: hrUrl }); }
+    else { tab = await chrome.tabs.create({ url: hrUrl, active: false }); created = true; }
+  } catch (e) { return { ok: false, kind: 'login', error: 'HR System 탭을 열지 못했습니다: ' + String((e && e.message) || e) }; }
+  const deadline = Date.now() + HR_AUTO_LOGIN_MS;
+  let landed = false, lastErr = null;
+  while (Date.now() < deadline) {
+    await sleep(landed ? 2000 : 500);
+    let t = null;
+    try { t = await chrome.tabs.get(tab.id); } catch (e) { return { ok: false, kind: 'login', error: 'HR System 탭이 닫혀 자동 로그인을 끝내지 못했습니다' }; }
+    if (!landed) {   // SSO 가 다른 사이트를 거치는 동안(url 을 볼 수 없음)은 기다리고, HR 로 돌아와 로딩이 끝나면 잠시 뒤 읽기 시작
+      if (t.status !== 'complete' || !/^https:\/\/hr\.krs\.co\.kr\//i.test(String(t.url || ''))) continue;
+      landed = true; await sleep(1500);
+    }
+    try {
+      const r = await tryCollect();
+      if (created) { try { await chrome.tabs.remove(tab.id); } catch (e) {} }
+      return r;
+    } catch (e) { lastErr = e; if (!(e && e.kind === 'login')) break; }
+  }
+  const kind = (lastErr && lastErr.kind) || 'login';
+  return { ok: false, kind, tabOpened: true,
+    error: kind === 'login' ? 'HR System 자동 로그인이 되지 않았습니다' : String((lastErr && lastErr.message) || lastErr) };
+}
+
 let hrInflight = null;
 async function collectHr(force, all) {
   if (hrInflight) return hrInflight;
@@ -178,21 +213,28 @@ async function collectHr(force, all) {
     const empNo = [cur.empNo, u.empNo, u.userId, settings.myEmpNo].map((v) => String(v || '').trim()).find((v) => KRX_HR_API.EMP_RE.test(v)) || '';
     if (!empNo) return await requestHrCollect(force, all);   // 사번을 모름 → HR 탭(프로필에서 읽음)에 맡김
     await ensureHrRules();
-    try {
+    const tryCollect = async () => {
       KRX_HR_API.setBase(KRX_HR_API.HOME);
       const patch = await KRX_HR_API.collect({ empNo, known: cur.years || {}, years: [new Date().getFullYear()], force: !!all, page: 'background' });
       patch.status = { ts: Date.now(), ok: true, via: 'background' };
       const merged = await mergeHrPay(patch); await patchCacheHrPay(merged);
       return { ok: true, via: 'background', scan: patch.scan, grade: patch.grade || '', empNo, months: patch.lists.reduce((s, l) => s + l.total, 0) };
-    } catch (e) {
-      const kind = e && e.kind, msg = String((e && e.message) || e);
+    };
+    try { return await tryCollect(); }
+    catch (e) {
+      let kind = e && e.kind, msg = String((e && e.message) || e), tabOpened = false;
+      if (kind === 'login' && hr.autoLogin !== false) {   // 로그인이 풀림 → HR 메인을 비활성 탭으로 열어 SSO 자동 로그인 뒤 다시 읽기 (hrAutoLogin)
+        const re = await hrAutoLogin(hr.url || KRX_HR_API.HOME + '/', tryCollect);
+        if (re.ok) return Object.assign(re, { autoLogin: true });
+        kind = re.kind || kind; msg = re.error || msg; tabOpened = !!re.tabOpened;
+      }
       if (kind !== 'login') {   // 빈 응답(규칙 미적용)·네트워크·HTTP 오류 → HR 탭이 있으면 그쪽에서 (탭은 프로필의 사번으로 다시 시도)
         const viaTab = await requestHrCollect(force, all);
         if (viaTab.ok) return viaTab;
       }
-      const status = { ts: Date.now(), error: msg, loginRequired: kind === 'login', via: 'background' };
+      const status = { ts: Date.now(), error: msg, loginRequired: kind === 'login', tabOpened, via: 'background' };
       const merged = await mergeHrPay({ status }); await patchCacheHrPay(merged);
-      return { ok: false, via: 'background', error: msg, loginRequired: status.loginRequired };
+      return { ok: false, via: 'background', error: msg, loginRequired: status.loginRequired, tabOpened };
     }
   })().finally(() => { hrInflight = null; });
   return hrInflight;

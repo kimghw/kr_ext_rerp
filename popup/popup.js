@@ -34,6 +34,8 @@
     } catch (e) { state.fatal = String((e && e.message) || e); }
     state.loading = false; draw();
     if (state.data && state.data.settings && state.data.settings.rndUrl) document.getElementById('rndLink').href = state.data.settings.rndUrl;
+    const hr = state.data && state.data.settings && state.data.settings.hr;
+    if (hr && hr.url) document.getElementById('hrLink').href = hr.url;
   }
   // 백그라운드가 캐시를 바꾸면(급여·연구수당 보기 클릭 → HR 수집 결과 등) 바로 반영 (content/eclass.js 와 같은 방식)
   try {

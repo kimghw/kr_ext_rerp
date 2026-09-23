@@ -72,8 +72,11 @@
   try { state.plans = await KRX_PLAN.load(); } catch (e) {}
   try { state.payPlans = await KRX_PAY.load(); } catch (e) {}   // 받기 예정 연구수당 (lib/pay.js)
   try { state.partPlans = await KRX_PART.load(); } catch (e) {}   // 예비 참여율(참여 계획) (lib/part.js)
-  const link = Array.from(document.querySelectorAll('a[href]')).find((x) => /rnd\.krs\.co\.kr/i.test(x.href));
+  const anchors = Array.from(document.querySelectorAll('a[href]'));
+  const link = anchors.find((x) => /rnd\.krs\.co\.kr/i.test(x.href));
   state.rndUrl = link ? link.href : null;
+  const hrLink = anchors.find((x) => /hr\.krs\.co\.kr/i.test(x.href));   // 하단 HR System 열기 (없으면 설정의 HR System 링크)
+  state.hrUrl = hrLink ? hrLink.href : null;
 
   const draw = () => KRX_RENDER.render(host, state);
   KRX_PLAN.bind(host, state, draw);   // 과제집행비율 표의 예상 비용 입력(＋/수정/삭제) 처리

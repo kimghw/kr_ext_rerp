@@ -134,10 +134,11 @@
   <details class="card" data-collapse="hr">
     <summary><h2>급여·연구수당 (HR System) <span id="hrSummary" class="muted"></span></h2></summary>
     <p class="help">패널의 <b>급여·연구수당 보기</b>를 누를 때(그리고 펼친 상태의 ↻) HR System(hr.krs.co.kr) 급여명세서 화면이 쓰는 API 로 올해 급여지급내역 목록과 각 달의 지급내역(소득명·금액), 직원 정보의 직급(P1~P4)을 백그라운드에서 읽어 저장합니다.
-      주기적으로 읽지는 않습니다(급여는 한 달에 한 번 바뀜). HR 탭을 열어 둘 필요는 없고 HR 에 로그인되어 있으면(세션이 살아 있으면) 됩니다. 세션이 끊기면 아래와 패널에 "로그인 필요"로 표시되며, HR System 에 다시 로그인한 뒤 ↻ 를 누르면 됩니다. 사번은 R&amp;D ERP 사용자 정보(또는 아래 사번 설정)로 정합니다.
+      주기적으로 읽지는 않습니다(급여는 한 달에 한 번 바뀜). HR 탭을 열어 둘 필요는 없고 HR 에 로그인되어 있으면(세션이 살아 있으면) 됩니다. 세션이 끊기면 HR System 링크를 비활성 탭으로 열어 자동 로그인(SSO)한 뒤 다시 읽고, 그래도 안 되면 아래와 패널에 "로그인 필요"로 표시되며 열어 둔 탭에서 로그인한 뒤 ↻ 를 누르면 됩니다. 사번은 R&amp;D ERP 사용자 정보(또는 아래 사번 설정)로 정합니다.
       패널의 <b>급여·연구수당 보기</b> 버튼을 누르면 <b>더 받을 수 있는 금액</b>(월 기본연봉 × 12 × 직급 비율 − 올해 1월부터의 연구수당지급 합계 − 받기 예정)과 <b>받기 예정 연구수당</b> 목록만 표시하고, 기본연봉·올해 지급 합계·한도는 금액 칸의 툴팁에서 볼 수 있습니다.
       HR System 에는 아무것도 쓰지 않으며 값은 이 브라우저(확장 저장소)에만 남습니다.</p>
     <label class="check"><input type="checkbox" id="hrEnabled"> 급여명세서 수집 및 패널 표시</label>
+    <label class="check"><input type="checkbox" id="hrAutoLogin"> 로그인이 풀려 있으면 아래 HR System 링크를 비활성 탭으로 열어 자동 로그인(SSO)한 뒤 다시 읽기 (30초 안에 안 되면 그 탭을 열어 둠)</label>
     <div class="grid">
       <label>직급 <select id="hrGrade"><option value="">자동 감지 (HR 직원 정보)</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option><option value="P4">P4</option></select></label>
       <label>직급별 연구수당 한도 비율 (%) — 한 줄에 하나, <code>직급=비율</code> <textarea id="hrRates" rows="4" placeholder="P1=18&#10;P2=20&#10;P3=22&#10;P4=24"></textarea></label>
