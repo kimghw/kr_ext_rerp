@@ -371,10 +371,21 @@
     }
     return n;
   }
-  /* 첨부문서 칸의 "가능한 확장자 : PPT, PPTX, …" 문구가 있으면 그 확장자만 허용 */
-  function allowedExts(box) {
-    const m = /확장자\s*[:：]\s*([A-Za-z0-9]+(?:\s*,\s*[A-Za-z0-9]+)*)/.exec(box ? box.textContent || '' : '');
-    return m ? new Set(m[1].split(/\s*,\s*/).map((x) => x.toLowerCase())) : null;
+  /* 파일등록 팝업(rcomm_0089_01.js changeFile())의 검사 규칙. 확장자·용량 규칙은 팝업의 hidden 값(APPR_FILE_CHK_YN 등)이 정하므로
+   * 청구서 쪽에서는 팝업이 무조건 거부하는 것(실행·스크립트 확장자, 확장자 없음)만 빼고, 나머지 판정은 팝업 쪽에서 한다 */
+  const DENY_EXT = new Set(['exe', 'bat', 'sh', 'java', 'jsp', 'htm', 'html', 'js', 'class', 'ini', 'php', 'jsv']);
+  const IMAGE_EXT = ['bmp', 'rle', 'dib', 'gif', 'jpg', 'jpeg', 'tif', 'tiff', 'tga', 'pct', 'pgm', 'psd', 'ppm', 'png', 'pcx', 'pcd', 'sgi', 'eps'];
+  const SC_RE = /[{}\[\]\/?,;:|*~`!^<>@#$%&\\='"]/g;   // 팝업이 파일명에서 지우는 특수문자
+  const extOf = (name) => { const s = String(name || ''); const i = s.lastIndexOf('.'); return i < 0 ? null : s.slice(i + 1).toLowerCase(); };
+  const byteLen = (s) => { let n = 0; for (const ch of String(s || '')) n += ch.charCodeAt(0) > 127 ? 2 : 1; return n; };
+  const alwaysDenied = (f) => { const e = extOf(f.name); return e == null || DENY_EXT.has(e); };
+  const skippedText = (sk) => (sk || []).map((s) => `${s.name} (${s.why})`).join(', ');
+  function failText(res) {
+    const sk = res.skipped && res.skipped.length ? `\n제외: ${skippedText(res.skipped)}` : '';
+    if (res.reason === 'empty') return '첨부 창의 규칙에 맞는 파일이 없어 올리지 못했습니다.' + sk;
+    if (res.reason === 'single') return '이 첨부 창은 파일을 하나만 받는데 이미 파일이 있습니다. 그 창에서 정리한 뒤 올려 주세요.';
+    if (res.reason === 'button') return '업로드 버튼을 찾지 못했습니다. 첨부 창에서 업로드를 눌러 주세요.' + sk;
+    return '첨부 창에서 자동 처리를 못 했습니다. 그 창에 파일을 끌어다 놓고 업로드를 눌러 주세요.' + sk;
   }
   function findAttachButton(box) {
     const cands = Array.from(box.querySelectorAll('button,a,input[type=button],input[type=submit],img,span,div,label'));
@@ -386,10 +397,9 @@
   async function dropFiles(box, files) {
     let list = Array.from(files || []).filter((f) => f && f.name);
     if (!list.length) return;
-    const allow = allowedExts(box);
-    if (allow) {
-      const bad = list.filter((f) => !allow.has((f.name.split('.').pop() || '').toLowerCase()));
-      if (bad.length) toast(`허용되지 않는 확장자라 제외: ${bad.map((f) => f.name).join(', ')}`);
+    const bad = list.filter(alwaysDenied);
+    if (bad.length) {
+      toast(`첨부할 수 없는 파일 종류라 제외: ${bad.map((f) => f.name).join(', ')}`, 5000);
       list = list.filter((f) => !bad.includes(f));
       if (!list.length) return;
     }
@@ -413,8 +423,9 @@
     toast('첨부 창에 파일을 넘기는 중…', 20000);
     const timeout = new Promise((r) => setTimeout(() => r({ type: 'timeout' }), 20000));
     const res = await Promise.race([result, timeout]);
-    if (res.type === 'done') toast(`${res.n}개 파일을 첨부 창에서 올렸습니다.`, 3500);
-    else if (res.type === 'fail') toast('첨부 창에서 자동 처리를 못 했습니다. 그 창에 파일을 끌어다 놓고 업로드를 눌러 주세요.', 6000);
+    const skipped = res.skipped && res.skipped.length ? `\n제외: ${skippedText(res.skipped)}` : '';
+    if (res.type === 'done') toast(`${res.n}개 파일을 첨부 창에서 올렸습니다.` + skipped, skipped ? 8000 : 3500);
+    else if (res.type === 'fail') toast(failText(res), 8000);
     else { if (pending && pending.id === id) pending = null; toast('첨부 창이 응답하지 않습니다. 그 창에 파일을 끌어다 놓고 업로드를 눌러 주세요.', 6000); }
   }
 
@@ -470,8 +481,39 @@
     }
     return null;
   }
-  /* "마우스로 파일을 끌어오세요" 문구가 든 드롭 구역(목록 상자) */
+  /* 팝업의 hidden 값 (없으면 빈 문자열) */
+  const hidVal = (id) => { const el = document.getElementById(id); return el && el.value != null ? String(el.value).trim() : ''; };
+  /* 팝업 목록에 오른 파일 수: 목록 행의 체크박스(filechkKey) 수 → 없으면 "N 개체" 문구 → 목록 상자(#dropZone)만 있으면 0 → 아무것도 없으면 null(알 수 없음) */
+  function listedCount() {
+    const n = document.querySelectorAll('input[name="filechkKey"]').length;
+    if (n) return n;
+    const m = /(\d+)\s*개체/.exec((document.body && document.body.textContent) || '');
+    if (m) return Number(m[1]);
+    return document.getElementById('dropZone') ? 0 : null;
+  }
+  /* 팝업 changeFile() 의 검사 규칙을 hidden 값에서 읽는다. 걸리는 파일이 있으면 팝업이 alert 를 띄우고 그 뒤 파일을 모두 버리므로 미리 같은 규칙으로 걸러 넘긴다.
+   * APPR_FILE_CHK_YN: Y=PDF·이미지만, I=이미지만, P=일부 이미지·500KB 이하. GBCD_1_CD: 허용 확장자 목록(문자열 포함 여부). MAX_FILE_SIZE(MB), MAX_CNT(개수), SINGLE_YN */
+  function popupRules() {
+    const chk = hidVal('APPR_FILE_CHK_YN');
+    const allow = chk === 'Y' ? new Set(['pdf', ...IMAGE_EXT]) : chk === 'I' ? new Set(IMAGE_EXT) : chk === 'P' ? new Set(['bmp', 'gif', 'jpg', 'png', 'jpeg']) : null;
+    let maxMb = Number(hidVal('MAX_FILE_SIZE')) || 0;
+    if (!maxMb && !document.getElementById('MAX_FILE_SIZE')) { const m = /(\d+)\s*MB/.exec((document.body && document.body.textContent) || ''); if (m) maxMb = Number(m[1]); }   // hidden 값이 없는 화면: 안내 문구의 "N MB"
+    return { chk, allow, gb: hidVal('GBCD_1_CD').toLowerCase(), maxMb, maxCnt: Number(hidVal('MAX_CNT')) || 0, single: hidVal('SINGLE_YN') === 'Y' };
+  }
+  function rejectReason(f, r) {
+    const ext = extOf(f.name);
+    if (byteLen(f.name) > 200) return '파일명이 너무 긺';
+    if (ext == null || DENY_EXT.has(ext)) return '첨부할 수 없는 파일 종류';
+    if (r.allow && !r.allow.has(ext)) return r.chk === 'Y' ? 'PDF·이미지만 가능' : '이미지만 가능';
+    if (r.chk === 'P' && f.size > 500 * 1024) return '500KB 초과';
+    if (r.gb && r.gb.indexOf(ext) === -1) return '허용 확장자 아님';
+    if (r.maxMb && f.size / 1024 / 1024 > r.maxMb) return `${r.maxMb}MB 초과`;
+    return '';
+  }
+  /* 파일 목록 상자: 팝업의 #dropZone, 없으면 "마우스로 파일을 끌어오세요" 문구가 든 구역 */
   function findDropZone() {
+    const dz = document.getElementById('dropZone');
+    if (dz) return dz;
     let leaf = null;
     for (const el of document.querySelectorAll('div,span,p,td,li,label')) if (isLeaf(el) && /끌어오세요|끌어다/.test(ownText(el))) { leaf = el; break; }
     if (!leaf) return null;
@@ -497,31 +539,37 @@
     uploading = true;
     try {
       const bodyText = () => (document.body && document.body.textContent) || '';
-      const lim = /(\d+)\s*MB/.exec(bodyText());
-      const limit = lim ? Number(lim[1]) * 1024 * 1024 : 0;
-      let list = files.filter((f) => f && f.name);
-      if (limit) {
-        const big = list.filter((f) => f.size > limit);
-        if (big.length) toast(`용량(${lim[1]}MB) 초과로 제외: ${big.map((f) => f.name).join(', ')}`, 5000);
-        list = list.filter((f) => f.size <= limit);
+      const rules = popupRules();
+      const before = listedCount() || 0;
+      const skipped = [];   // { name, why } — 청구서 쪽 토스트에 보여 준다 (이 창은 업로드 뒤 스스로 닫히므로)
+      let list = files.filter((f) => f && f.name).filter((f) => { const why = rejectReason(f, rules); if (why) skipped.push({ name: f.name, why }); return !why; });
+      if (rules.single) {
+        if (before > 0) { post({ type: 'fail', id, reason: 'single', skipped }); return; }
+        for (const f of list.slice(1)) skipped.push({ name: f.name, why: '하나만 첨부 가능' });
+        list = list.slice(0, 1);
       }
-      if (!list.length) { post({ type: 'fail', id, reason: 'empty' }); return; }
-      const names = list.map((f) => f.name);
-      const countOf = () => { const m = /(\d+)\s*개체/.exec(bodyText()); return m ? Number(m[1]) : null; };
-      const before = countOf();
-      const listed = () => { const t = bodyText(); const c = countOf(); return names.every((n) => t.includes(n)) || (c != null && before != null && c >= before + list.length); };
+      if (rules.maxCnt && before + list.length > rules.maxCnt) {
+        const room = Math.max(0, rules.maxCnt - before);
+        for (const f of list.slice(room)) skipped.push({ name: f.name, why: `최대 ${rules.maxCnt}개` });
+        list = list.slice(0, room);
+      }
+      log('팝업 규칙', rules, '제외', skipped);
+      if (!list.length) { post({ type: 'fail', id, reason: 'empty', skipped }); return; }
+      // 목록에 올랐는지: 행 수가 늘었는지로 보고, 행 수를 알 수 없는 화면이면 표시 이름(특수문자 제거, 앞부분)이 글자에 있는지로 본다
+      const shown = list.map((f) => f.name.replace(SC_RE, '').slice(0, 20));
+      const listed = () => { const c = listedCount(); if (c != null) return c >= before + list.length; const t = bodyText(); return shown.every((s) => t.includes(s)); };
       const waitListed = async (ms) => { const st = Date.now(); while (Date.now() - st < ms) { if (listed()) return true; await sleep(150); } return false; };
       let ok = false;
       fiCache.ts = 0;
       const inputs = findFileInputs();
       if (inputs.length) { await feedFiles(inputs[0], list); ok = await waitListed(1500); log('팝업 파일 입력', ok); }
       if (!ok) { const zone = findDropZone(); if (zone) { synthDrop(zone, list); ok = await waitListed(1500); log('팝업 드롭 구역', ok); } }
-      if (!ok) { toast('파일을 목록에 넣지 못했습니다. 이 창에 파일을 끌어다 놓고 업로드를 눌러 주세요.', 6000); post({ type: 'fail', id, reason: 'list' }); return; }
+      if (!ok) { toast('파일을 목록에 넣지 못했습니다. 이 창에 파일을 끌어다 놓고 업로드를 눌러 주세요.', 6000); post({ type: 'fail', id, reason: 'list', skipped }); return; }
       const up = findButton(['업로드']);
-      if (!up) { toast('업로드 버튼을 찾지 못했습니다. 직접 눌러 주세요.', 6000); post({ type: 'fail', id, reason: 'button' }); return; }
+      if (!up) { toast('업로드 버튼을 찾지 못했습니다. 직접 눌러 주세요.', 6000); post({ type: 'fail', id, reason: 'button', skipped }); return; }
       document.dispatchEvent(new Event('krext-auto-confirm'));   // MAIN world 훅(rnd-hook.js): 잠시 동안 confirm() 자동 확인
       up.click();
-      post({ type: 'done', id, n: list.length });
+      post({ type: 'done', id, n: list.length, skipped });
     } catch (e) { log('autoUpload 오류', e); post({ type: 'fail', id, reason: String(e && e.message || e) }); }
     finally { uploading = false; }
   }
