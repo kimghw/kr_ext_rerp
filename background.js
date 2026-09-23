@@ -76,7 +76,7 @@ async function scheduleAlarm() {
   const settings = await KRX_SETTINGS.load();
   await chrome.alarms.clear(ALARM);
   if (settings.autoRefresh) {
-    chrome.alarms.create(ALARM, { periodInMinutes: Math.max(5, KRX_FMT.num(settings.refreshMinutes) || 10) });
+    chrome.alarms.create(ALARM, { periodInMinutes: Math.max(1, KRX_FMT.num(settings.refreshMinutes) || 10) });   // 설정의 갱신 주기(분), 최소 1분
   }
 }
 

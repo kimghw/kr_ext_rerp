@@ -104,16 +104,16 @@
   </section>
 
   <details class="card" data-collapse="unap">
-    <summary><h2>미승인내역 실시간 조회 (선택) <span id="unapSummary" class="muted"></span></h2></summary>
+    <summary><h2>미승인내역 실시간 조회 <span id="unapSummary" class="muted"></span></h2></summary>
     <p class="help">R&amp;D ERP 메인화면을 열면 아래 <b>캡처 로그</b>에 호출된 서비스가 기록됩니다. 미승인내역(임시저장/보완요청/신청/구매요청) 값을 돌려주는 서비스를 찾아
       <b>이 서비스 사용</b>을 누른 뒤, 응답 JSON의 필드명을 아래에 적으면 eClass 화면에서 실시간으로 조회합니다. 설정 전에는 메인화면 방문 시 화면에서 읽은 값을 표시합니다.</p>
     <div class="grid">
-      <label>서비스 ID <input type="text" id="unapServiceId" placeholder="예) rmain_0002_01_r003"></label>
+      <label>서비스 ID <input type="text" id="unapServiceId" placeholder="기본 rmain_0002_01_r006 (메인화면과 동일)"></label>
       <label>입력 JSON <input type="text" id="unapInput" placeholder='{}'></label>
-      <label>보완요청 필드명 <input type="text" id="unapSupplement" placeholder="예) SUPP_CNT"></label>
-      <label>신청 필드명 <input type="text" id="unapApply" placeholder="예) APPL_CNT"></label>
-      <label>임시저장 필드명 <input type="text" id="unapTemp"></label>
-      <label>구매요청 필드명 <input type="text" id="unapPurchase"></label>
+      <label>보완요청 필드명 <input type="text" id="unapSupplement" placeholder="기본 SUPPLEMENT_CNT"></label>
+      <label>신청 필드명 <input type="text" id="unapApply" placeholder="기본 APPLY_CNT"></label>
+      <label>임시저장 필드명 <input type="text" id="unapTemp" placeholder="기본 TEMP_SAVE_CNT"></label>
+      <label>구매요청 필드명 <input type="text" id="unapPurchase" placeholder="기본 BUY_REQ_CNT"></label>
       <label class="wide">링크 URL (숫자 클릭 시 이동) <input type="url" id="unapLinkUrl"></label>
     </div>
     <div class="row">

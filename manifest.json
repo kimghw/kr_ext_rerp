@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "KR eClass + R&D ERP 현황",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "eClass 홈 화면에 R&D ERP(rnd.krs.co.kr)의 미승인내역, 과제별 카드미청구 내역, 과제집행비율(비목별 예산잔액)을 표시합니다.",
   "permissions": ["storage", "alarms", "scripting"],
   "host_permissions": ["https://rnd.krs.co.kr/*", "https://eclass.krs.co.kr/*"],
