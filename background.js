@@ -19,10 +19,21 @@ function updateBadge(data) {
       chrome.action.setTitle({ title: 'R&D ERP 현황 - 로그인 필요' });
       return;
     }
-    const n = data.totalCount || 0;
+    // 배지 = 카드미청구 + 미승인내역(보완요청 + 신청). 미승인내역은 실시간값, 없으면 메인화면 방문 시 읽은 스냅샷
+    const cards = KRX_FMT.num(data.totalCount) || 0;
+    let supplement = 0, apply = 0;
+    if (data.unapproved) {
+      supplement = KRX_FMT.num(data.unapproved.supplement) || 0;
+      apply = KRX_FMT.num(data.unapproved.apply) || 0;
+    } else if (data.unapprovedSnapshot && data.unapprovedSnapshot.items) {
+      const it = data.unapprovedSnapshot.items;
+      supplement = KRX_FMT.num(it['보완요청'] && it['보완요청'].count) || 0;
+      apply = KRX_FMT.num(it['신청'] && it['신청'].count) || 0;
+    }
+    const n = cards + supplement + apply;
     chrome.action.setBadgeText({ text: n > 0 ? String(n) : '' });
     chrome.action.setBadgeBackgroundColor({ color: '#d7263d' });
-    chrome.action.setTitle({ title: `R&D ERP 현황 - 카드미청구 ${n}건` });
+    chrome.action.setTitle({ title: `R&D ERP 현황 - 카드미청구 ${cards}건 · 보완요청 ${supplement}건 · 신청 ${apply}건` });
   } catch (e) {}
 }
 
