@@ -53,6 +53,7 @@ async function refresh(force) {
       const ttl = Math.max(1, KRX_FMT.num(settings.refreshMinutes) || 10) * 60000;
       // 오류로 끝난 결과(예: 재로드 직후 일시적 네트워크 오류)는 TTL 과 상관없이 다시 조회
       if (!force && cache && cache.ts && !cache.error && Date.now() - cache.ts < ttl) { updateBadge(cache); return cache; }
+      requestHrCollect(force).catch(() => {});   // 열려 있는 HR 탭이 있으면 급여명세서도 함께 갱신 (결과는 hrPay 메시지로 따로 반영, 주기 판단은 탭 쪽에서)
       let data = await KRX_API.collect(settings);
       if (gen !== settingsGen) { force = true; continue; }   // 조회 중 설정이 바뀜(예: 과제 제외) → 이 결과는 캐시하지 않고 다시 조회
       if (data.memberFilter === 'no-id' && !data.loginRequired) {
@@ -118,42 +119,58 @@ async function injectClaimHelperIntoOpenErpTabs() {
     chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ['lib/settings.js', 'content/rnd-claim.js'] }).catch(() => {})));
 }
 
-/* 이미 열려 있는 HR System 탭에 급여명세서 수집 스크립트를 넣는다 (모든 프레임). 다시 주입된 스크립트는 이전 것을 멈추고 새로 시작한다 */
+/* 이미 열려 있는 HR System 탭(최상위 프레임)에 급여명세서 수집 스크립트를 넣는다. 다시 주입된 스크립트는 이전 것을 멈추고 새로 시작한다 */
 async function injectHrIntoOpenTabs() {
   let tabs = [];
   try { tabs = await chrome.tabs.query({ url: ['https://hr.krs.co.kr/*'] }); } catch (e) { return; }
   await Promise.all((tabs || []).map((t) =>
-    chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ['lib/format.js', 'lib/settings.js', 'content/hr-pay.js'] }).catch(() => {})));
+    chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['lib/format.js', 'lib/settings.js', 'lib/hr-api.js', 'content/hr-pay.js'] }).catch(() => {})));
+}
+/* 열려 있는 HR System 탭에 급여명세서 수집(hrCollect)을 요청한다. HR API 는 확장 출처에서 부르면 본문 없는 200 을 주므로(CORS) 탭 안에서만 호출할 수 있다.
+ * 수집 결과는 탭이 hrPay 메시지로 따로 보내온다. 첫 탭이 성공하면 나머지는 건너뜀 */
+async function requestHrCollect(force, all) {
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({ url: ['https://hr.krs.co.kr/*'] }); } catch (e) { return { tabs: 0, results: [] }; }
+  const out = { tabs: (tabs || []).length, results: [] };
+  for (const t of tabs || []) {
+    try {
+      const r = await chrome.tabs.sendMessage(t.id, { type: 'hrCollect', force: !!force, all: !!all }, { frameId: 0 });
+      out.results.push(r || { error: '응답 없음' });
+      if (r && r.ok) break;
+    } catch (e) { out.results.push({ error: String((e && e.message) || e) }); }
+  }
+  return out;
 }
 
-/* HR 급여명세서 수집(content/hr-pay.js) 병합 → storage.local.hrPay
- * { ts, page, empNo, name, grade, gradeTs, gradePage, years: { [연도]: { months: { [지급일자|내용]: { date, title, total, items:{소득명: 금액}, order, mismatch, ts } }, list: { ts, total, rows } } }, scan }
- * 달은 key 로 덮어쓰고(같은 달을 다시 읽으면 최신값), 목록(list)은 연도별로 통째로 교체. 3년 넘은 연도는 정리 */
+/* HR 급여명세서 수집(content/hr-pay.js → lib/hr-api.js) 병합 → storage.local.hrPay
+ * { ts(마지막 성공 수집), source:'api', page, empNo, name, dept, grade(P1~P4, HR 직원 정보의 gradeCode), gradeTs,
+ *   years: { [연도]: { months: { [지급일자|내용]: { date, title, seq, total, detailTotal, mismatch, items:{소득명: 금액}, order, codes, ts } }, list: { ts, total, rows } } },
+ *   scan: { ts, years, tried, done, failed, note }, status: { ts, ok | error, loginRequired } }
+ * API 는 한 해의 목록 전체를 주므로 목록은 통째로 교체하고 목록에 없는 달(예전 화면 읽기 잔재)은 지운다. 달은 key 로 덮어쓴다. 3년 넘은 연도는 정리 */
 async function mergeHrPay(patch) {
   const cur = (await chrome.storage.local.get('hrPay')).hrPay || { years: {} };
   cur.years = cur.years || {};
-  cur.ts = Date.now();
+  if (patch.lists || patch.months || patch.grade || patch.empNo) { cur.ts = Date.now(); if (patch.source) cur.source = patch.source; }
   if (patch.page) cur.page = patch.page;
-  if (patch.empNo) cur.empNo = patch.empNo;
-  if (patch.name) cur.name = patch.name;
-  if (patch.grade) { cur.grade = String(patch.grade).toUpperCase(); cur.gradeTs = Date.now(); cur.gradePage = patch.gradePage || ''; }
+  for (const k of ['empNo', 'name', 'dept', 'payGroupCode']) if (patch[k]) cur[k] = patch[k];
+  if (patch.grade) { cur.grade = String(patch.grade).toUpperCase(); cur.gradeTs = Date.now(); }
+  for (const l of patch.lists || []) {
+    if (!l || !l.year) continue;
+    const y = cur.years[l.year] = cur.years[l.year] || { months: {} };
+    y.months = y.months || {};
+    const rows = (l.rows || []).filter((r) => r && r.key).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const keys = new Set(rows.map((r) => r.key));
+    for (const k of Object.keys(y.months)) if (!keys.has(k)) delete y.months[k];
+    y.list = { ts: Date.now(), total: rows.length, rows };
+  }
   for (const m of patch.months || []) {
     if (!m || !m.key || !m.year) continue;
     const y = cur.years[m.year] = cur.years[m.year] || { months: {} };
     y.months = y.months || {};
     y.months[m.key] = m;
   }
-  for (const l of patch.lists || []) {
-    if (!l || !l.year) continue;
-    const y = cur.years[l.year] = cur.years[l.year] || { months: {} };
-    // 가상 스크롤 그리드는 화면에 보이는 행만 DOM 에 있어 한 번에 일부만 읽힌다 → 행은 key 로 합치고 총 건수는 큰 값을 유지
-    const prev = (y.list && y.list.rows) || [];
-    const byKey = new Map(prev.map((r) => [r.key, r]));
-    for (const r of l.rows || []) if (r && r.key) byKey.set(r.key, r);
-    const rows = Array.from(byKey.values()).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-    y.list = { ts: Date.now(), total: Math.max(Number(l.total) || 0, Number(y.list && y.list.total) || 0, rows.length) || null, rows };
-  }
   if (patch.scan) cur.scan = patch.scan;
+  if (patch.status) cur.status = patch.status;
   const thisYear = new Date().getFullYear();
   for (const k of Object.keys(cur.years)) if (Number(k) < thisYear - 2) delete cur.years[k];
   await chrome.storage.local.set({ hrPay: cur });
@@ -168,7 +185,7 @@ async function patchCacheHrPay(hrPay) {
 }
 
 chrome.runtime.onInstalled.addListener(() => {   // 설치/업데이트/재로드 시 이전 캐시를 버리고 새로 조회
-  chrome.storage.local.remove(CACHE_KEY)
+  chrome.storage.local.remove([CACHE_KEY, 'hrDiag'])
     .then(injectBridgeIntoOpenErpTabs)
     .then(injectClaimHelperIntoOpenErpTabs)
     .then(injectHrIntoOpenTabs)
@@ -198,6 +215,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'jctCaptured': await appendCapture(msg.entry, sender); return { ok: true };
       case 'unapprovedSnapshot': await chrome.storage.local.set({ unapprovedSnapshot: msg.snapshot }); return { ok: true };
       case 'hrPay': { const merged = await mergeHrPay(msg.patch || {}); await patchCacheHrPay(merged); return { ok: true }; }
+      case 'hrCollectNow': return await requestHrCollect(true, !!msg.all);   // 설정 페이지: 열려 있는 HR 탭에서 지금 수집
       case 'clearHrPay': await chrome.storage.local.remove('hrPay'); await patchCacheHrPay(null); return { ok: true };
       case 'rndUser': {
         const u = msg.user || {};

@@ -380,7 +380,6 @@
     toggleClaimBox();
     const h = Object.assign({}, S.DEFAULTS.hr, s.hr || {});
     $('hrEnabled').checked = h.enabled !== false;
-    $('hrAutoScan').checked = h.autoScan !== false;
     $('hrGrade').value = String(h.grade || '').toUpperCase();
     $('hrRates').value = Object.entries(h.gradeRates || {}).map(([k, v]) => `${k}=${v}`).join('\n');
     $('hrBaseItem').value = h.baseItem || '';
@@ -459,7 +458,6 @@
       },
       hr: {
         enabled: $('hrEnabled').checked,
-        autoScan: $('hrAutoScan').checked,
         grade: $('hrGrade').value.trim().toUpperCase(),
         gradeRates: parseRates($('hrRates').value),
         baseItem: $('hrBaseItem').value.trim() || S.DEFAULTS.hr.baseItem,
@@ -536,16 +534,32 @@
     const y = (hp.years || {})[year] || {};
     const n = Object.keys(y.months || {}).length, total = y.list && y.list.total;
     const parts = [`${year}년 ${n}${total ? '/' + total : ''}개월 수집`];
-    if (hp.grade) parts.push(`직급 자동 감지 ${hp.grade}`);
-    if (hp.empNo) parts.push(`사번 ${hp.empNo}${hp.name ? ' ' + hp.name : ''}`);
-    if (hp.ts) parts.push(`${F.fmtClock(hp.ts)} 기준`);
+    if (hp.grade) parts.push(`직급 ${hp.grade} (HR 직원 정보에서 자동 감지)`);
+    if (hp.empNo) parts.push(`사번 ${hp.empNo}${hp.name ? ' ' + hp.name : ''}${hp.dept ? ' ' + hp.dept : ''}`);
+    if (hp.ts) parts.push(`${F.fmtClock(hp.ts)} 수집`);
     if (hp.scan && hp.scan.note) parts.push(hp.scan.note);
+    if (hp.status && hp.status.loginRequired) parts.push('HR System 로그인이 풀려 갱신 못 함');
+    else if (hp.status && hp.status.error) parts.push(`오류: ${hp.status.error}`);
     $('hrInfo').textContent = parts.join(' · ');
     $('hrSummary').textContent = on ? `${year}년 ${n}개월 수집${hp.grade ? ` · ${hp.grade}` : ''}` : '사용 안 함';
   }
   $('hrEnabled').addEventListener('change', showHr);
+  // 열려 있는 HR 탭에 수집 요청 (확장 자체에서는 HR API 를 부를 수 없음). 모든 달을 다시 읽는다
+  $('btnHrCollect').addEventListener('click', async () => {
+    setStatus('hrStatus', 'HR System 탭에 수집을 요청하는 중…');
+    let r = null;
+    try { r = await chrome.runtime.sendMessage({ type: 'hrCollectNow', all: true }); } catch (e) { r = null; }
+    if (!r || !r.tabs) { setStatus('hrStatus', 'HR System(hr.krs.co.kr) 탭이 열려 있지 않습니다. HR 에 로그인한 탭을 열어 두면 자동으로 수집됩니다.', true); showHr(); return; }
+    const ok = (r.results || []).find((x) => x && x.ok);
+    if (ok) setStatus('hrStatus', `수집했습니다 — ${ok.scan ? `급여 ${ok.months || 0}건 중 지급내역 ${ok.scan.done}건 읽음` : ''}${ok.grade ? ` · 직급 ${ok.grade}` : ' · 직급 없음'}`);
+    else {
+      const e = (r.results || []).find((x) => x && (x.error || x.skipped)) || {};
+      setStatus('hrStatus', e.loginRequired ? 'HR System 로그인이 필요합니다. HR 탭에서 로그인하세요.' : (e.error || (e.skipped ? `건너뜀: ${e.skipped}` : '응답 없음 (HR 탭을 새로고침한 뒤 다시 시도)')), true);
+    }
+    showHr();
+  });
   $('btnHrClear').addEventListener('click', async () => {
-    if (!confirm('수집한 급여 정보(기본연봉·연구수당 등)를 지울까요? HR System 급여명세서를 다시 열면 다시 수집됩니다.')) return;
+    if (!confirm('수집한 급여 정보(기본연봉·연구수당 등)를 지울까요? HR System 탭을 열면 다시 수집됩니다.')) return;
     await chrome.runtime.sendMessage({ type: 'clearHrPay' });
     setStatus('hrStatus', '지웠습니다.');
     showHr();
@@ -595,7 +609,7 @@
     const q = $('capFilter').value.trim().toLowerCase();
     const list = capCache.slice().reverse().filter((e) => !q || JSON.stringify(e).toLowerCase().includes(q));
     $('captureCount').textContent = `(${list.length}/${capCache.length}건)`;
-    if (!list.length) { $('captureList').innerHTML = '<p class="help">기록이 없습니다. R&amp;D ERP(rnd.krs.co.kr)를 열어 메인화면을 표시하거나 HR System(hr.krs.co.kr) 급여명세서를 열면 기록됩니다 (HR 기록은 <code>hr:</code> 접두어).</p>'; return; }
+    if (!list.length) { $('captureList').innerHTML = '<p class="help">기록이 없습니다. R&amp;D ERP(rnd.krs.co.kr)를 열어 메인화면을 표시하면 기록됩니다.</p>'; return; }
     $('captureList').innerHTML = list.map((e, i) => {
       const hit = HINT.test(e.response || '') && !/GWM0001/.test(e.response || '');
       const t = new Date(e.ts);
