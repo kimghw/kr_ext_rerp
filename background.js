@@ -19,7 +19,7 @@ function updateBadge(data) {
       chrome.action.setTitle({ title: 'R&D ERP 현황 - 로그인 필요 (eClass의 R&D ERP 메뉴를 클릭해서 로그인해주세요)' });
       return;
     }
-    // 배지 = 카드미청구 + 미승인내역(보완요청 + 신청). 미승인내역은 실시간값, 없으면 메인화면 방문 시 읽은 스냅샷
+    // 미승인내역(보완요청 + 신청)은 실시간값, 없으면 메인화면 방문 시 읽은 스냅샷
     const cards = KRX_FMT.num(data.totalCount) || 0;
     let supplement = 0, apply = 0;
     if (data.unapproved) {
@@ -30,10 +30,16 @@ function updateBadge(data) {
       supplement = KRX_FMT.num(it['보완요청'] && it['보완요청'].count) || 0;
       apply = KRX_FMT.num(it['신청'] && it['신청'].count) || 0;
     }
-    const n = cards + supplement + apply;
-    chrome.action.setBadgeText({ text: n > 0 ? String(n) : '' });
-    chrome.action.setBadgeBackgroundColor({ color: '#d7263d' });
-    chrome.action.setTitle({ title: `R&D ERP 현황 - 카드미청구 ${cards}건 · 보완요청 ${supplement}건 · 신청 ${apply}건` });
+    // 승인 필요 건수(보완요청 + 신청)가 있으면 그 수를 빨간 배지로 우선 표시, 없으면 카드미청구 건수를 회색 배지로 표시
+    const pending = supplement + apply;
+    if (pending > 0) {
+      chrome.action.setBadgeText({ text: String(pending) });
+      chrome.action.setBadgeBackgroundColor({ color: '#d7263d' });
+    } else {
+      chrome.action.setBadgeText({ text: cards > 0 ? String(cards) : '' });
+      chrome.action.setBadgeBackgroundColor({ color: '#8a8f98' });
+    }
+    chrome.action.setTitle({ title: `R&D ERP 현황 - 보완요청 ${supplement}건 · 신청 ${apply}건 · 카드미청구 ${cards}건` });
   } catch (e) {}
 }
 
