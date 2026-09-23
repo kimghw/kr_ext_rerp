@@ -16,6 +16,9 @@
 .krext-panel.krext-inline .krext-cols { display: grid; grid-template-columns: minmax(240px, 300px) 1fr; gap: 16px; align-items: start; }
 .krext-panel.krext-inline .krext-stats { flex-direction: column; }
 .krext-panel.krext-inline .krext-stat { flex: none; flex-direction: row; justify-content: space-between; padding: 8px 12px; }
+/* 미승인내역: 본문 삽입 모드에서도 보완요청 / 신청 두 칸을 세로 쌓기 대신 한 줄에 */
+.krext-panel.krext-inline .krext-unappr .krext-stats { flex-direction: row; }
+.krext-panel.krext-inline .krext-unappr .krext-stat { flex: 1 1 0; min-width: 0; }
 .krext-panel.krext-inline .krext-shop { max-width: 320px; }
 .krext-panel.krext-inline .krext-prj-nm { white-space: normal; }
 .krext-col { padding: 0 12px; }
@@ -38,6 +41,12 @@
 .krext-chip { display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border-radius: 12px; background: rgba(255,255,255,.18); font-size: 11.5px; line-height: 22px; white-space: nowrap; }
 .krext-chip-l { opacity: .9; }
 .krext-chip-v { font-weight: 800; font-size: 13px; }
+a.krext-chip { color: inherit !important; text-decoration: none !important; cursor: pointer; }
+a.krext-chip:hover { filter: brightness(.94); }
+/* 구역 전환 칩(미청구/집행비율): 현재 구역 강조 */
+.krext-chip.krext-on { background: rgba(255,255,255,.34); box-shadow: inset 0 0 0 1px rgba(255,255,255,.6); }
+.krext-panel.krext-inline .krext-chip.krext-on { background: #e3edfb; color: #1a5fb4; box-shadow: inset 0 0 0 1px #b7cdf0; }
+.krext-panel.krext-inline .krext-chip.krext-on .krext-chip-l { color: #1a5fb4; }
 .krext-chip-red { background: #ff5a6e; color: #fff; }
 .krext-chip-blue { background: #4d8fe6; color: #fff; }
 .krext-chip-warn { background: #ffb300; color: #222; }
@@ -56,6 +65,10 @@
 .krext-sec { margin-bottom: 10px; }
 .krext-sec-title { font-weight: 700; font-size: 13px; margin: 4px 0 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .krext-note { font-weight: 400; font-size: 11px; color: #6b7480; }
+/* 구역 제목 줄 오른쪽 작은 건수 (미승인내역의 임시저장 · 구매요청) */
+.krext-sec-r { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-weight: 400; font-size: 11px; color: #4b5563; white-space: nowrap; }
+.krext-sec-r b { font-weight: 700; color: #222; font-variant-numeric: tabular-nums; }
+.krext-sec-r b.krext-dim { color: #8a919c; }
 .krext-stats { display: flex; gap: 8px; flex-wrap: wrap; }
 .krext-stat { flex: 1 1 120px; display: flex; flex-direction: column; align-items: center; padding: 8px 6px; border: 1px solid #e1e6ee; border-radius: 8px; background: #f7f9fc; color: inherit !important; }
 .krext-stat:hover { background: #eef3fa; text-decoration: none !important; }
@@ -83,6 +96,7 @@
 .krext-zero .krext-prj-nm, .krext-zero .krext-prj-rspr { color: #8a919c; }
 .krext-caret { width: 12px; color: #8a919c; font-size: 11px; }
 .krext-prj-rspr { width: 52px; flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.krext-prj-rspr.krext-card-nm { width: auto; max-width: 150px; }   /* 카드 별명(설정)은 뒤 8자리보다 길 수 있음 */
 .krext-prj-nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .krext-prj-cnt { flex: none; font-weight: 700; color: #6b7480; }
 .krext-prj-cnt.krext-hot { color: #d7263d; }
@@ -133,4 +147,89 @@
 .krext-bgt tfoot td { border-top: 2px solid #d5dbe3; background: #f3f5f8; font-weight: 700; }
 .krext-bgt .krext-rate { justify-content: flex-end; }
 .krext-panel.krext-inline .krext-bgt .krext-bar { width: 72px; }
+/* 예상 비용 (비목 행의 ＋ → 세목 · 수량 · 단가 입력). 보라 계열로 미청구(빨강)와 구분 */
+.krext-plus-btn { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 6px; padding: 0; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #1a5fb4; font-size: 13px; line-height: 1; cursor: pointer; vertical-align: middle; }
+.krext-plus-btn:hover { background: #e3edfb; border-color: #b7cdf0; }
+.krext-bgt tbody tr.krext-bgt-plan td, .krext-bgt tbody tr.krext-bgt-proj td, .krext-bgt tbody tr.krext-bgt-form td, .krext-bgt tbody tr.krext-bgt-orphan td { background: #f8f6ff; }
+.krext-bgt tbody tr.krext-bgt-plan td { color: #4b5563; border-bottom: 1px dotted #e3ddf5; }
+.krext-bgt tr.krext-bgt-plan .krext-bgt-nm, .krext-bgt tr.krext-bgt-orphan .krext-bgt-nm { white-space: normal; }
+.krext-bgt tbody tr.krext-bgt-orphan td { color: #6b7480; border-top: 1px dashed #d9d2f2; }
+.krext-plan-ind { color: #a89ed6; margin-right: 2px; }
+.krext-plan-nm { font-weight: 600; color: #4a3d8f; }
+.krext-plan-rate { color: #6b5cc4; }
+.krext-plan-acts { display: inline-flex; gap: 2px; margin-left: 4px; vertical-align: middle; }
+.krext-plan-acts button { border: 0; background: transparent; color: #8a919c; cursor: pointer; font-size: 12px; line-height: 16px; padding: 0 3px; border-radius: 4px; }
+.krext-plan-acts button:hover { background: #e6e0fa; color: #4a3d8f; }
+.krext-bgt tbody tr.krext-bgt-proj td { font-weight: 600; color: #4a3d8f; border-bottom: 1px solid #e3ddf5; }
+.krext-bgt tfoot tr.krext-bgt-proj td { background: #f1edfc; border-top: 1px dashed #c9bff0; color: #4a3d8f; }
+.krext-plan-form { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 2px 0; }
+.krext-plan-form input { height: 24px; padding: 2px 6px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #222; font-family: inherit; font-size: 12px; line-height: 1.2; margin: 0; }
+.krext-plan-form input:focus { outline: none; border-color: #4d8fe6; box-shadow: 0 0 0 2px rgba(77,143,230,.2); }
+.krext-plan-form input[data-plan="name"] { flex: 1 1 150px; min-width: 120px; }
+.krext-plan-form label { display: inline-flex; align-items: center; gap: 3px; margin: 0; font-size: 11px; font-weight: 400; color: #6b7480; white-space: nowrap; }
+.krext-plan-form input[data-plan="qty"] { width: 46px; text-align: right; }
+.krext-plan-form input[data-plan="unit"], .krext-plan-form input[data-plan="amt"] { width: 92px; text-align: right; font-variant-numeric: tabular-nums; }
+.krext-plan-btn { height: 24px; padding: 0 9px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #1a5fb4; font-family: inherit; font-size: 12px; cursor: pointer; }
+.krext-plan-btn:hover { background: #eef3fa; }
+.krext-plan-btn.krext-plan-save { background: #1f4e9c; border-color: #1f4e9c; color: #fff; }
+.krext-plan-btn.krext-plan-save:hover { background: #17407f; }
+.krext-plan-err { font-size: 11px; flex-basis: 100%; }
+.krext-prj-proj { display: block; font-size: 10.5px; font-weight: 600; color: #6b5cc4; line-height: 1.2; white-space: nowrap; }
+/* 표 머리글 "비목" 옆 아이콘 (눈: 과제 단위 감추기/보이기, 저장: CSV) 과 수량 −/＋ 버튼 */
+.krext-plan-ico { display: inline-flex; gap: 2px; margin-left: 6px; vertical-align: middle; }
+.krext-ico-btn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 18px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: #6b5cc4; cursor: pointer; }
+.krext-ico-btn:hover { background: #e6e0fa; border-color: #d9d2f2; }
+.krext-ico-btn.krext-ico-off { color: #8a919c; }
+.krext-ico-btn svg { display: block; }
+.krext-plan-saved { margin-left: 4px; font-size: 11px; font-weight: 400; color: #1a7f37; white-space: nowrap; }
+.krext-plan-qty { display: inline-flex; align-items: center; gap: 1px; margin-left: 4px; vertical-align: middle; }
+.krext-plan-qty button, .krext-plan-step button { width: 16px; height: 16px; padding: 0; border: 1px solid #d9d2f2; border-radius: 4px; background: #fff; color: #6b5cc4; font-size: 11px; line-height: 1; cursor: pointer; font-family: inherit; }
+.krext-plan-qty button:hover, .krext-plan-step button:hover { background: #e6e0fa; }
+.krext-plan-qty-v { min-width: 16px; text-align: center; font-weight: 600; color: #4a3d8f; font-variant-numeric: tabular-nums; }
+.krext-plan-step { display: inline-flex; align-items: center; gap: 2px; }
+.krext-plan-step button { width: 20px; height: 24px; border-radius: 5px; border-color: #c9d1dc; color: #1a5fb4; font-size: 13px; }
+.krext-plan-step button:hover { background: #eef3fa; }
+.krext-plan-lbl { font-size: 11px; color: #6b7480; white-space: nowrap; }
+.krext-plan-lbl b { color: #4a3d8f; }
+/* 월간 구독: 폼의 토글 버튼, 결제일 입력, 항목 줄의 태그 */
+.krext-plan-subtn { display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 7px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #6b7480; font-family: inherit; font-size: 11px; cursor: pointer; }
+.krext-plan-subtn:hover { background: #f3f6fb; }
+.krext-plan-subtn.krext-on { background: #e6e0fa; border-color: #c9bff0; color: #4a3d8f; }
+.krext-plan-subtn svg { width: 12px; height: 12px; }
+.krext-plan-form input[data-plan="date"] { width: 132px; padding: 1px 4px; }
+.krext-tag-sub { background: #e6e0fa; color: #4a3d8f; }
+/* 과제 참여율: 막대 + 합계 줄(클릭하면 과제별 표) */
+.krext-part-head { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid #e1e6ee; border-radius: 8px; background: #f7f9fc; color: inherit !important; text-decoration: none !important; }
+.krext-part-head:hover { background: #eef3fa; }
+.krext-part-head .krext-part-bar { flex: 1; width: auto; height: 9px; }
+.krext-part-v { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.krext-part-max { font-size: 11px; }
+.krext-part-cnt { font-size: 11px; white-space: nowrap; }
+.krext-part-table { margin-top: 6px; }
+.krext-part-table td.krext-part-rspr { white-space: nowrap; font-weight: 600; }
+.krext-part-table td.krext-part-nm { max-width: 220px; }
+.krext-part-table td.krext-part-nm a { color: inherit; }
+.krext-part-table td.krext-part-term { white-space: nowrap; font-size: 11px; }
+.krext-part-table tfoot td { border-top: 2px solid #d5dbe3; background: #f3f5f8; font-weight: 700; }
+.krext-part-table tr.krext-part-sub td { background: #fbfbfe; border-bottom: 1px dotted #e3e6ef; font-size: 11.5px; padding-top: 2px; padding-bottom: 2px; }
+.krext-part-table tr.krext-part-counted td { color: #222; }
+.krext-part-kind { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; background: #eef1f5; color: #4b5563; font-size: 10px; line-height: 16px; vertical-align: middle; }
+.krext-part-table tr.krext-part-counted td.krext-num { font-weight: 700; }
+/* 급여·연구수당 (HR): 미승인내역 아래 왼쪽 칸. 받기 예정 연구수당 목록/입력 폼 */
+.krext-side { min-width: 0; }
+.krext-pay .krext-stat-val { font-size: 17px; }
+/* 급여·연구수당은 기본 숨김: 버튼 하나만 보이고 누르면 펼침 (급여 정보라 화면에 늘 띄우지 않음) */
+.krext-pay-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid #c9d1dc; border-radius: 7px; background: #fff; color: #1a5fb4; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.krext-pay-toggle:hover { background: #eef3fa; border-color: #b7cdf0; }
+.krext-pay .krext-sec-title .krext-pay-toggle { margin-left: auto; padding: 1px 8px; font-size: 11px; font-weight: 400; }
+.krext-pay-plans { flex-basis: 100%; margin-top: 4px; padding: 6px 8px; border: 1px dashed #d9d3f0; border-radius: 8px; background: #faf9ff; font-size: 12px; }
+.krext-pay-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-weight: 600; color: #4b5563; }
+.krext-pay-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-top: 1px dotted #e3ddf5; color: #4b5563; }
+.krext-pay-row .krext-pay-nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.krext-pay-row .krext-pay-amt { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.krext-pay-form { flex-wrap: wrap; }
+.krext-pay-form input { height: 24px; padding: 2px 6px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #222; font-family: inherit; font-size: 12px; line-height: 1.2; margin: 0; }
+.krext-pay-form input:focus { outline: none; border-color: #4d8fe6; box-shadow: 0 0 0 2px rgba(77,143,230,.2); }
+.krext-pay-form input[data-pay="name"] { flex: 1 1 110px; min-width: 90px; }
+.krext-pay-form input[data-pay="amt"] { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 900px) { .krext-panel.krext-float { width: calc(100vw - 32px); right: 16px; } }

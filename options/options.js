@@ -5,6 +5,8 @@
   const setStatus = (id, text, isErr) => { const el = $(id); el.textContent = text || ''; el.classList.toggle('err', !!isErr); if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ''; }, 4000); };
 
   let selected = new Set();     // 모니터링 카드 선택(숫자만)
+  let cardNames = {};           // settings.cardNames { [카드 숫자]: 별명 } (카드 별명 구역, 입력 시 바로 저장)
+  let namesTimer = 0;
   let issued = null;            // storage.local.issuedCards: { ts, projects: [{prjNo, prjNm, rspr, cards[], accounts[], acctKnown}] }
   let excluded = new Set();     // 제외한 과제번호
   let projectList = null;       // storage.local.projectList
@@ -224,6 +226,7 @@
       updateIssuedSummary();
     }));
     renderMonitor();
+    renderCardNames();
   }
   async function loadIssued() {
     issued = (await chrome.storage.local.get('issuedCards')).issuedCards || null;
@@ -265,6 +268,54 @@
   $('cardFilterList').addEventListener('input', updateMonitorSummary);
   $('btnMonAll').addEventListener('click', () => { $('monitorList').querySelectorAll('input[type=checkbox][data-mon]').forEach((cb) => { cb.checked = true; cb.dispatchEvent(new Event('change')); }); });
   $('btnMonNone').addEventListener('click', () => { $('monitorList').querySelectorAll('input[type=checkbox][data-mon]').forEach((cb) => { cb.checked = false; cb.dispatchEvent(new Event('change')); }); });
+
+  /* ---------- 카드 별명 (발급 카드 목록의 카드마다 입력, 목록에 없는 카드는 "뒷자리=별명" 직접 입력) ---------- */
+  function renderCardNames() {
+    const box = $('cardNameList');
+    const seen = new Map();
+    for (const p of (issued && issued.projects) || []) for (const c of p.cards || []) {
+      if (!c.digits) continue;
+      if (!seen.has(c.digits)) seen.set(c.digits, { digits: c.digits, cardNo: c.cardNo, user: c.user, prjs: [] });
+      const nm = p.rspr || p.prjNo; if (!seen.get(c.digits).prjs.includes(nm)) seen.get(c.digits).prjs.push(nm);
+    }
+    const rows = Array.from(seen.values()).map((c) => `<tr class="${cardNames[c.digits] ? 'on' : ''}"><td class="card">${F.esc(c.cardNo)}</td><td>${F.esc(c.user)}</td><td>${F.esc(c.prjs.join(', '))}</td>
+      <td><input type="text" class="nick" data-nick="${F.esc(c.digits)}" value="${F.esc(cardNames[c.digits] || '')}" placeholder="별명" maxlength="30"></td></tr>`).join('');
+    box.innerHTML = rows ? `<table class="issued-table"><thead><tr><th>카드번호</th><th>사용자</th><th>귀속 과제</th><th>별명</th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<div class="issued-empty">발급 카드 목록이 없습니다. 위 <b>과제별 카드 귀속</b>의 목록 새로고침을 누르거나 아래에 직접 입력하세요.</div>';
+    const extra = Object.entries(cardNames).filter(([k]) => !seen.has(k));   // 목록에 없는 카드의 별명은 직접 입력 칸에
+    if (document.activeElement !== $('cardNameExtra')) $('cardNameExtra').value = extra.map(([k, v]) => `${F.cardTail(k, 8)}=${v}`).join('\n');
+    box.querySelectorAll('input[data-nick]').forEach((inp) => inp.addEventListener('input', () => {
+      const v = inp.value.trim();
+      if (v) cardNames[inp.dataset.nick] = v; else delete cardNames[inp.dataset.nick];
+      inp.closest('tr').classList.toggle('on', !!v);
+      updateNamesSummary(); scheduleSaveNames();
+    }));
+    updateNamesSummary();
+  }
+  function parseExtraNames(text) {
+    const out = {};
+    for (const line of String(text || '').split(/\r?\n/)) {
+      const m = line.match(/^\s*([\d\-\s*]+?)\s*=\s*(.+?)\s*$/); if (!m) continue;
+      const k = F.digits(m[1]); if (k.length >= 4) out[k] = m[2];
+    }
+    return out;
+  }
+  $('cardNameExtra').addEventListener('input', () => {
+    const listed = new Set(Array.from($('cardNameList').querySelectorAll('input[data-nick]')).map((i) => i.dataset.nick));
+    for (const k of Object.keys(cardNames)) if (!listed.has(k)) delete cardNames[k];
+    Object.assign(cardNames, parseExtraNames($('cardNameExtra').value));
+    updateNamesSummary(); scheduleSaveNames();
+  });
+  function updateNamesSummary() { const n = Object.keys(cardNames).length; $('namesSummary').textContent = n ? `${n}장` : ''; }
+  function scheduleSaveNames() { clearTimeout(namesTimer); namesTimer = setTimeout(saveCardNames, 600); }
+  async function saveCardNames() {
+    try {
+      const cur = await S.load();
+      cur.cardNames = Object.assign({}, cardNames);
+      await S.save(cur);
+      setStatus('namesStatus', '적용했습니다. 패널은 자동으로 다시 조회됩니다.');
+    } catch (e) { setStatus('namesStatus', '적용 실패: ' + String((e && e.message) || e), true); }
+  }
 
   /* ---------- 폼 ---------- */
   async function showRndUser() {
@@ -309,6 +360,7 @@
     }
     document.querySelector(`input[name=cardFilterMode][value="${s.cardFilterMode === 'specific' ? 'specific' : 'all'}"]`).checked = true;
     selected = new Set((s.selectedCards || []).map((x) => F.digits(x)).filter(Boolean));
+    cardNames = Object.assign({}, s.cardNames || {});
     renderIssued();
     $('cardFilterList').value = (s.cardFilterList || []).join('\n');
     $('monthsBack').value = s.monthsBack;
@@ -326,6 +378,14 @@
     $('chDragDrop').checked = ch.dragDrop !== false;
     $('chQuickPicks').value = (Array.isArray(ch.quickPicks) ? ch.quickPicks : []).join('\n');
     toggleClaimBox();
+    const h = Object.assign({}, S.DEFAULTS.hr, s.hr || {});
+    $('hrEnabled').checked = h.enabled !== false;
+    $('hrAutoScan').checked = h.autoScan !== false;
+    $('hrGrade').value = String(h.grade || '').toUpperCase();
+    $('hrRates').value = Object.entries(h.gradeRates || {}).map(([k, v]) => `${k}=${v}`).join('\n');
+    $('hrBaseItem').value = h.baseItem || '';
+    $('hrResearchItem').value = h.researchItem || '';
+    $('hrUrl').value = h.url || '';
     bgtInclude = Object.assign({}, s.budgetItemInclude || {});
     bgtDefaultKeys = (s.budgetExcludeDefault || []).map(normNm).filter(Boolean);
     renderBgtItems();
@@ -376,6 +436,7 @@
       cardFilterMode: mode,
       selectedCards: Array.from(selected),
       cardFilterList: F.parseList($('cardFilterList').value),
+      cardNames: Object.assign({}, cardNames),
       monthsBack: num('monthsBack', 6),
       monthsForward: num('monthsForward', 1),
       maxProjects: num('maxProjects', 30) || 30,
@@ -395,6 +456,15 @@
         defaultRcms: $('chDefaultRcms').value.trim(),
         dragDrop: $('chDragDrop').checked,
         quickPicks: $('chQuickPicks').value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)
+      },
+      hr: {
+        enabled: $('hrEnabled').checked,
+        autoScan: $('hrAutoScan').checked,
+        grade: $('hrGrade').value.trim().toUpperCase(),
+        gradeRates: parseRates($('hrRates').value),
+        baseItem: $('hrBaseItem').value.trim() || S.DEFAULTS.hr.baseItem,
+        researchItem: $('hrResearchItem').value.trim() || S.DEFAULTS.hr.researchItem,
+        url: $('hrUrl').value.trim() || S.DEFAULTS.hr.url
       },
       unapproved: {
         serviceId: $('unapServiceId').value.trim(),
@@ -447,6 +517,40 @@
   });
   $('btnReset').addEventListener('click', () => { if (confirm('모든 설정을 기본값으로 되돌릴까요?')) fill(S.merge(S.DEFAULTS, {})); });
 
+  /* ---------- 급여·연구수당 (HR System) ---------- */
+  /* "P3=22" 줄 → { P3: 22 }. 비율이 숫자가 아니면 그 줄은 무시 (비운 직급은 기본값 유지) */
+  function parseRates(text) {
+    const out = {};
+    for (const line of String(text || '').split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z]{1,3}\d{1,2})\s*[=:]\s*([\d.]+)\s*%?\s*$/); if (!m) continue;
+      out[m[1].toUpperCase()] = Number(m[2]);
+    }
+    return out;
+  }
+  async function showHr() {
+    const hp = (await chrome.storage.local.get('hrPay')).hrPay || null;
+    $('hrOut').textContent = hp ? JSON.stringify(hp, null, 2) : '없음 (HR System 급여명세서를 열면 수집됩니다)';
+    const on = $('hrEnabled').checked;
+    if (!hp) { $('hrInfo').textContent = ''; $('hrSummary').textContent = on ? '아직 수집 전' : '사용 안 함'; return; }
+    const year = String(new Date().getFullYear());
+    const y = (hp.years || {})[year] || {};
+    const n = Object.keys(y.months || {}).length, total = y.list && y.list.total;
+    const parts = [`${year}년 ${n}${total ? '/' + total : ''}개월 수집`];
+    if (hp.grade) parts.push(`직급 자동 감지 ${hp.grade}`);
+    if (hp.empNo) parts.push(`사번 ${hp.empNo}${hp.name ? ' ' + hp.name : ''}`);
+    if (hp.ts) parts.push(`${F.fmtClock(hp.ts)} 기준`);
+    if (hp.scan && hp.scan.note) parts.push(hp.scan.note);
+    $('hrInfo').textContent = parts.join(' · ');
+    $('hrSummary').textContent = on ? `${year}년 ${n}개월 수집${hp.grade ? ` · ${hp.grade}` : ''}` : '사용 안 함';
+  }
+  $('hrEnabled').addEventListener('change', showHr);
+  $('btnHrClear').addEventListener('click', async () => {
+    if (!confirm('수집한 급여 정보(기본연봉·연구수당 등)를 지울까요? HR System 급여명세서를 다시 열면 다시 수집됩니다.')) return;
+    await chrome.runtime.sendMessage({ type: 'clearHrPay' });
+    setStatus('hrStatus', '지웠습니다.');
+    showHr();
+  });
+
   /* ---------- 미승인내역 테스트 ---------- */
   $('btnTestUnap').addEventListener('click', async () => {
     const svc = $('unapServiceId').value.trim();
@@ -481,7 +585,7 @@
   });
 
   /* ---------- 캡처 로그 ---------- */
-  const HINT = /임시저장|보완요청|구매요청|TEMP|SUPP|APPL|PURCH|CNT/i;
+  const HINT = /임시저장|보완요청|구매요청|TEMP|SUPP|APPL|PURCH|CNT|기본연봉|연구수당/i;
   let capCache = [];
   async function loadCapture() {
     capCache = (await chrome.storage.local.get('captureLog')).captureLog || [];
@@ -491,7 +595,7 @@
     const q = $('capFilter').value.trim().toLowerCase();
     const list = capCache.slice().reverse().filter((e) => !q || JSON.stringify(e).toLowerCase().includes(q));
     $('captureCount').textContent = `(${list.length}/${capCache.length}건)`;
-    if (!list.length) { $('captureList').innerHTML = '<p class="help">기록이 없습니다. R&amp;D ERP(rnd.krs.co.kr)를 열어 메인화면을 표시하면 기록됩니다.</p>'; return; }
+    if (!list.length) { $('captureList').innerHTML = '<p class="help">기록이 없습니다. R&amp;D ERP(rnd.krs.co.kr)를 열어 메인화면을 표시하거나 HR System(hr.krs.co.kr) 급여명세서를 열면 기록됩니다 (HR 기록은 <code>hr:</code> 접두어).</p>'; return; }
     $('captureList').innerHTML = list.map((e, i) => {
       const hit = HINT.test(e.response || '') && !/GWM0001/.test(e.response || '');
       const t = new Date(e.ts);
@@ -544,6 +648,7 @@
     if (area === 'local' && ch.projectList) loadProjects();
     if (area === 'local' && ch.cache && ch.cache.newValue) { loadBgtItems(); showNameCandidates(); }
     if (area === 'local' && ch.rndUser) showRndUser();
+    if (area === 'local' && ch.hrPay) showHr();
   });
 
   const local = await chrome.storage.local.get(['issuedCards', 'projectList', 'cache']);
@@ -556,6 +661,7 @@
   await showRndUser();
   await showNameCandidates();
   await showSnapshot();
+  await showHr();
   await loadCapture();
   if (!issued || !projectList) {
     chrome.runtime.sendMessage({ type: 'getData', force: true }).then(() => { loadProjects(); loadIssued(); }).catch(() => {});

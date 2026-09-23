@@ -65,6 +65,7 @@ async function refresh(force) {
       const projectList = data.projectList || [];
       delete data.issued;
       delete data.projectList;
+      try { data.hrPay = (await chrome.storage.local.get('hrPay')).hrPay || null; } catch (e) {}   // 조회 도중 HR 급여명세서가 수집됐을 수 있어 저장 직전 값으로
       await chrome.storage.local.set({ [CACHE_KEY]: data });
       if (!data.loginRequired && data.memberFilter !== 'no-id' && !data.error) {
         // 설정 페이지의 과제 선택 / 발급 카드 목록: 참여 과제만 저장 (다른 과제 정보는 저장하지 않음)
@@ -117,10 +118,60 @@ async function injectClaimHelperIntoOpenErpTabs() {
     chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ['lib/settings.js', 'content/rnd-claim.js'] }).catch(() => {})));
 }
 
+/* 이미 열려 있는 HR System 탭에 급여명세서 수집 스크립트를 넣는다 (모든 프레임). 다시 주입된 스크립트는 이전 것을 멈추고 새로 시작한다 */
+async function injectHrIntoOpenTabs() {
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({ url: ['https://hr.krs.co.kr/*'] }); } catch (e) { return; }
+  await Promise.all((tabs || []).map((t) =>
+    chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ['lib/format.js', 'lib/settings.js', 'content/hr-pay.js'] }).catch(() => {})));
+}
+
+/* HR 급여명세서 수집(content/hr-pay.js) 병합 → storage.local.hrPay
+ * { ts, page, empNo, name, grade, gradeTs, gradePage, years: { [연도]: { months: { [지급일자|내용]: { date, title, total, items:{소득명: 금액}, order, mismatch, ts } }, list: { ts, total, rows } } }, scan }
+ * 달은 key 로 덮어쓰고(같은 달을 다시 읽으면 최신값), 목록(list)은 연도별로 통째로 교체. 3년 넘은 연도는 정리 */
+async function mergeHrPay(patch) {
+  const cur = (await chrome.storage.local.get('hrPay')).hrPay || { years: {} };
+  cur.years = cur.years || {};
+  cur.ts = Date.now();
+  if (patch.page) cur.page = patch.page;
+  if (patch.empNo) cur.empNo = patch.empNo;
+  if (patch.name) cur.name = patch.name;
+  if (patch.grade) { cur.grade = String(patch.grade).toUpperCase(); cur.gradeTs = Date.now(); cur.gradePage = patch.gradePage || ''; }
+  for (const m of patch.months || []) {
+    if (!m || !m.key || !m.year) continue;
+    const y = cur.years[m.year] = cur.years[m.year] || { months: {} };
+    y.months = y.months || {};
+    y.months[m.key] = m;
+  }
+  for (const l of patch.lists || []) {
+    if (!l || !l.year) continue;
+    const y = cur.years[l.year] = cur.years[l.year] || { months: {} };
+    // 가상 스크롤 그리드는 화면에 보이는 행만 DOM 에 있어 한 번에 일부만 읽힌다 → 행은 key 로 합치고 총 건수는 큰 값을 유지
+    const prev = (y.list && y.list.rows) || [];
+    const byKey = new Map(prev.map((r) => [r.key, r]));
+    for (const r of l.rows || []) if (r && r.key) byKey.set(r.key, r);
+    const rows = Array.from(byKey.values()).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    y.list = { ts: Date.now(), total: Math.max(Number(l.total) || 0, Number(y.list && y.list.total) || 0, rows.length) || null, rows };
+  }
+  if (patch.scan) cur.scan = patch.scan;
+  const thisYear = new Date().getFullYear();
+  for (const k of Object.keys(cur.years)) if (Number(k) < thisYear - 2) delete cur.years[k];
+  await chrome.storage.local.set({ hrPay: cur });
+  return cur;
+}
+/* 패널 캐시의 hrPay 만 바꿔 넣어 eClass 패널·팝업이 바로 다시 그리게 한다 (R&D ERP 는 다시 조회하지 않음) */
+async function patchCacheHrPay(hrPay) {
+  const cache = await getCache();
+  if (!cache) return;
+  cache.hrPay = hrPay;
+  await chrome.storage.local.set({ [CACHE_KEY]: cache });
+}
+
 chrome.runtime.onInstalled.addListener(() => {   // 설치/업데이트/재로드 시 이전 캐시를 버리고 새로 조회
   chrome.storage.local.remove(CACHE_KEY)
     .then(injectBridgeIntoOpenErpTabs)
     .then(injectClaimHelperIntoOpenErpTabs)
+    .then(injectHrIntoOpenTabs)
     .then(() => { scheduleAlarm(); refresh(true).catch(() => {}); });
   // 열려 있는 eClass 홈 탭은 옛 콘텐츠 스크립트가 남아 통신이 끊기므로 새로고침
   try {
@@ -146,6 +197,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'getData': return await refresh(!!msg.force);
       case 'jctCaptured': await appendCapture(msg.entry, sender); return { ok: true };
       case 'unapprovedSnapshot': await chrome.storage.local.set({ unapprovedSnapshot: msg.snapshot }); return { ok: true };
+      case 'hrPay': { const merged = await mergeHrPay(msg.patch || {}); await patchCacheHrPay(merged); return { ok: true }; }
+      case 'clearHrPay': await chrome.storage.local.remove('hrPay'); await patchCacheHrPay(null); return { ok: true };
       case 'rndUser': {
         const u = msg.user || {};
         if (!u.userId && !u.empNo && !u.userNm) return { ok: false };

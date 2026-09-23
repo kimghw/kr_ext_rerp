@@ -59,7 +59,8 @@
   }
   if (!inline) { host.classList.add('krext-float'); document.body.appendChild(host); }
 
-  const state = { mode: inline ? 'inline' : 'page', loading: true, data: null, fatal: null, collapsed: false, expanded: new Set(), rndUrl: null, view: 'project', section: 'cards', version: '' };
+  const state = { mode: inline ? 'inline' : 'page', loading: true, data: null, fatal: null, collapsed: false, expanded: new Set(), rndUrl: null, view: 'project', section: 'cards', version: '',
+    plans: {}, planEdit: null, planDraft: null, planError: '' };   // 예상 비용 (lib/plan.js)
   try { state.version = chrome.runtime.getManifest().version; } catch (e) {}
   try {
     const local = await chrome.storage.local.get(['panelCollapsed', 'cache', 'panelView', 'panelSection']);
@@ -68,10 +69,14 @@
     state.view = local.panelView === 'card' ? 'card' : 'project';
     state.section = local.panelSection === 'budget' ? 'budget' : 'cards';
   } catch (e) {}
+  try { state.plans = await KRX_PLAN.load(); } catch (e) {}
+  try { state.payPlans = await KRX_PAY.load(); } catch (e) {}   // 받기 예정 연구수당 (lib/pay.js)
   const link = Array.from(document.querySelectorAll('a[href]')).find((x) => /rnd\.krs\.co\.kr/i.test(x.href));
   state.rndUrl = link ? link.href : null;
 
   const draw = () => KRX_RENDER.render(host, state);
+  KRX_PLAN.bind(host, state, draw);   // 과제집행비율 표의 예상 비용 입력(＋/수정/삭제) 처리
+  KRX_PAY.bind(host, state, draw);    // 급여·연구수당 구역의 받기 예정 연구수당 입력(＋/수정/삭제) 처리
 
   /* 확장이 새로고침/업데이트되면 이 스크립트는 확장과 연결이 끊긴다(Extension context invalidated). 예외 대신 안내 표시 */
   const alive = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; } };
@@ -95,10 +100,14 @@
       const act = btn.dataset.act;
       if (act === 'refresh') { ev.preventDefault(); load(true); }
       else if (act === 'settings') { ev.preventDefault(); safe(() => chrome.runtime.sendMessage({ type: 'openOptions' })); }
-      else if (act === 'toggle') { ev.preventDefault(); state.collapsed = !state.collapsed; safe(() => chrome.storage.local.set({ panelCollapsed: state.collapsed })); draw(); }
+      else if (act === 'toggle') { if (ev.target.closest('a')) return; ev.preventDefault(); state.collapsed = !state.collapsed; safe(() => chrome.storage.local.set({ panelCollapsed: state.collapsed })); draw(); }
       else if (act === 'prj') { ev.preventDefault(); const k = btn.dataset.prj; if (state.expanded.has(k)) state.expanded.delete(k); else state.expanded.add(k); draw(); }
       else if (act === 'view') { ev.preventDefault(); state.view = btn.dataset.view === 'card' ? 'card' : 'project'; safe(() => chrome.storage.local.set({ panelView: state.view })); draw(); }
-      else if (act === 'section') { ev.preventDefault(); state.section = btn.dataset.section === 'budget' ? 'budget' : 'cards'; safe(() => chrome.storage.local.set({ panelSection: state.section })); draw(); }
+      else if (act === 'section') {   // 본문 스위치 또는 헤더 칩(미청구/집행비율). 접힌 패널이면 펼친다
+        ev.preventDefault(); state.section = btn.dataset.section === 'budget' ? 'budget' : 'cards';
+        if (state.collapsed) { state.collapsed = false; safe(() => chrome.storage.local.set({ panelCollapsed: false })); }
+        safe(() => chrome.storage.local.set({ panelSection: state.section })); draw();
+      }
       else if (act === 'claim') { if (ev.target.closest('a')) return; ev.preventDefault(); if (btn.dataset.href) window.open(btn.dataset.href, '_blank', 'noopener'); }
     } catch (e) { showStale(); }
   });

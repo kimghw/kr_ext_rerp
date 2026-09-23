@@ -1,10 +1,15 @@
 /* 툴바 팝업: 패널 렌더러 재사용 */
 (async () => {
   const host = document.getElementById('krext-panel');
-  const state = { mode: 'popup', loading: true, data: null, fatal: null, collapsed: false, expanded: new Set(), rndUrl: null, view: 'project', section: 'cards', version: '' };
+  const state = { mode: 'popup', loading: true, data: null, fatal: null, collapsed: false, expanded: new Set(), rndUrl: null, view: 'project', section: 'cards', version: '',
+    plans: {}, planEdit: null, planDraft: null, planError: '' };   // 예상 비용 (lib/plan.js)
   try { state.version = chrome.runtime.getManifest().version; } catch (e) {}
   try { const l = await chrome.storage.local.get(['cache', 'panelView', 'panelSection']); state.data = l.cache || null; state.view = l.panelView === 'card' ? 'card' : 'project'; state.section = l.panelSection === 'budget' ? 'budget' : 'cards'; } catch (e) {}
+  try { state.plans = await KRX_PLAN.load(); } catch (e) {}
+  try { state.payPlans = await KRX_PAY.load(); } catch (e) {}   // 받기 예정 연구수당 (lib/pay.js)
   const draw = () => KRX_RENDER.render(host, state);
+  KRX_PLAN.bind(host, state, draw);   // 과제집행비율 표의 예상 비용 입력(＋/수정/삭제) 처리
+  KRX_PAY.bind(host, state, draw);    // 급여·연구수당 구역의 받기 예정 연구수당 입력(＋/수정/삭제) 처리
 
   host.addEventListener('click', (ev) => {
     const btn = ev.target.closest('[data-act]');
