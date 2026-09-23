@@ -34,9 +34,16 @@ async function refresh(force) {
       const settings = await KRX_SETTINGS.load();
       const cache = await getCache();
       const ttl = Math.max(1, KRX_FMT.num(settings.refreshMinutes) || 10) * 60000;
-      if (!force && cache && cache.ts && Date.now() - cache.ts < ttl) { updateBadge(cache); return cache; }
-      const data = await KRX_API.collect(settings);
+      // 오류로 끝난 결과(예: 재로드 직후 일시적 네트워크 오류)는 TTL 과 상관없이 다시 조회
+      if (!force && cache && cache.ts && !cache.error && Date.now() - cache.ts < ttl) { updateBadge(cache); return cache; }
+      let data = await KRX_API.collect(settings);
       if (gen !== settingsGen) { force = true; continue; }   // 조회 중 설정이 바뀜(예: 과제 제외) → 이 결과는 캐시하지 않고 다시 조회
+      if (data.memberFilter === 'no-id' && !data.loginRequired) {
+        // 사번/이름을 아직 모름 → 열려 있는 ERP 탭이 있으면 브리지를 넣어 직접 읽어 온 뒤 한 번 더 판정
+        await injectBridgeIntoOpenErpTabs();
+        const u = (await chrome.storage.local.get('rndUser')).rndUser;
+        if (u && (u.userId || u.empNo || u.userNm)) data = await KRX_API.collect(settings);
+      }
       const issued = data.issued || [];
       const projectList = data.projectList || [];
       delete data.issued;
@@ -73,8 +80,21 @@ async function scheduleAlarm() {
   }
 }
 
+/* 이미 열려 있는 R&D ERP 탭에 브리지를 다시 넣는다 (모든 프레임).
+ * 확장을 설치/재로드해도 열린 탭의 콘텐츠 스크립트는 다시 실행되지 않으므로, 사용자 식별(rndUser)이 안 잡힌 채로 남는 것을 막는다.
+ * 완료되면 refresh 가 새 rndUser 로 참여 과제를 판정한다 */
+async function injectBridgeIntoOpenErpTabs() {
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({ url: ['https://rnd.krs.co.kr/*'] }); } catch (e) { return; }
+  await Promise.all((tabs || []).map((t) =>
+    chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ['content/rnd-bridge.js'] }).catch(() => {})));
+  if (tabs.length) await new Promise((r) => setTimeout(r, 1500));   // 브리지의 rndUser 메시지가 저장될 시간
+}
+
 chrome.runtime.onInstalled.addListener(() => {   // 설치/업데이트/재로드 시 이전 캐시를 버리고 새로 조회
-  chrome.storage.local.remove(CACHE_KEY).then(() => { scheduleAlarm(); refresh(true).catch(() => {}); });
+  chrome.storage.local.remove(CACHE_KEY)
+    .then(injectBridgeIntoOpenErpTabs)
+    .then(() => { scheduleAlarm(); refresh(true).catch(() => {}); });
   // 열려 있는 eClass 홈 탭은 옛 콘텐츠 스크립트가 남아 통신이 끊기므로 새로고침
   try {
     chrome.tabs.query({ url: ['https://eclass.krs.co.kr/eClassVer4/Home/Index*', 'https://eclass.krs.co.kr/eClassVer4/Home', 'https://eclass.krs.co.kr/eClassVer4/'] }, (tabs) => {

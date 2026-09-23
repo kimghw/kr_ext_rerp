@@ -272,10 +272,33 @@
     $('rndUserInfo').textContent = u ? `${u.userNm || ''} (USER_ID ${u.userId || '-'}${u.empNo ? ', EMP_NO ' + u.empNo : ''}) · ${F.fmtClock(u.ts)} 기록` : 'R&D ERP를 열면 로그인 사용자 정보가 자동으로 기록됩니다.';
   }
 
+  /* 동명이인 후보 (cache.nameCandidates): 이름으로만 대조했는데 같은 이름의 사번이 둘 이상이면 고르게 한다. 고르면 myEmpNo 저장 → 백그라운드가 다시 조회 */
+  async function showNameCandidates() {
+    const box = $('nameCandidates');
+    const d = (await chrome.storage.local.get('cache')).cache || null;
+    const cands = (d && d.nameCandidates) || [];
+    if (!d || d.memberFilter !== 'ambiguous' || cands.length < 2) { box.hidden = true; box.innerHTML = ''; return; }
+    box.hidden = false;
+    box.innerHTML = `<b>동명이인 ${cands.length}명</b> — 이름 "${F.esc((d.myNames || []).join(', '))}"이(가) 참여인력에 여러 사번으로 있어 과제를 표시하지 않고 있습니다. 본인을 고르세요.<br>` +
+      cands.map((c) => `<label class="check"><input type="radio" name="nameCand" value="${F.esc(c.empNo || '')}"> ${F.esc(c.empNm)} · 사번 <b>${F.esc(c.empNo || '?')}</b>${c.roles && c.roles.length ? ' · ' + F.esc(c.roles.join('/')) : ''} · 과제 ${c.projects.length}건 <span class="muted">(${F.esc(c.projects.slice(0, 3).map((p) => (p.rspr ? p.rspr + ' ' : '') + p.prjNm).join(' / '))}${c.projects.length > 3 ? ' …' : ''})</span></label>`).join('');
+    box.querySelectorAll('input[name=nameCand]').forEach((r) => r.addEventListener('change', async () => {
+      if (!r.value) return;
+      $('myEmpNo').value = r.value;
+      try {
+        const cur = await S.load();
+        cur.myEmpNo = r.value;
+        cur.myName = $('myName').value.trim() || cur.myName;
+        await S.save(cur);
+        setStatus('saveStatus', `사번 ${r.value}로 저장했습니다. 참여 과제를 다시 조회합니다.`);
+      } catch (e) { setStatus('saveStatus', String(e.message || e), true); }
+    }));
+  }
+
   function fill(s) {
     document.querySelector(`input[name=panelMode][value="${s.panelMode === 'float' ? 'float' : 'inline'}"]`).checked = true;
     $('onlyMyProjects').checked = !!s.onlyMyProjects;
     $('myEmpNo').value = s.myEmpNo || '';
+    $('myName').value = s.myName || '';
     excluded = new Set((s.excludedProjects || []).map((x) => String(x).trim()).filter(Boolean));
     renderProjects();
     $('accountRule').checked = s.accountRule !== false;
@@ -357,6 +380,7 @@
       excludedProjects: Array.from(excluded),
       onlyMyProjects: $('onlyMyProjects').checked,
       myEmpNo: $('myEmpNo').value.trim(),
+      myName: $('myName').value.trim(),
       rndUrl: $('rndUrl').value.trim() || S.DEFAULTS.rndUrl,
       unapproved: {
         serviceId: $('unapServiceId').value.trim(),
@@ -496,7 +520,7 @@
     if (area === 'local' && ch.unapprovedSnapshot) showSnapshot();
     if (area === 'local' && ch.issuedCards) loadIssued();
     if (area === 'local' && ch.projectList) loadProjects();
-    if (area === 'local' && ch.cache && ch.cache.newValue) loadBgtItems();
+    if (area === 'local' && ch.cache && ch.cache.newValue) { loadBgtItems(); showNameCandidates(); }
     if (area === 'local' && ch.rndUser) showRndUser();
   });
 
@@ -508,6 +532,7 @@
   fill(await S.load());
   await loadProjects();
   await showRndUser();
+  await showNameCandidates();
   await showSnapshot();
   await loadCapture();
   if (!issued || !projectList) {

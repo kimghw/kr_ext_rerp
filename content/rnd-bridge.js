@@ -9,18 +9,37 @@
     send({ type: 'jctCaptured', entry: ev.data.entry });
   });
 
-  /* 로그인 사용자 식별자 (화면의 hidden input: USER_ID / EMP_NO / USER_NM) → 참여인력 대조용 */
+  /* 로그인 사용자 식별자 → 참여인력 대조용
+   * 레이아웃(rderp_layoutMain.act) 최상위 프레임: hidden input MAND_USER_ID(=사번, 전역 gUserId 와 동일)
+   * 메인 프레임(rmain_0002_01.act): "OOO님, 안녕하세요." 인사말
+   * 프레임마다 따로 보내면 백그라운드가 합친다. 인사말은 늦게 그려질 수 있어 몇 차례 재시도 */
   (function detectUser() {
     const val = (sel) => { const el = document.querySelector(sel); return el ? String(el.value || el.textContent || '').trim() : ''; };
-    const userId = val('input#USER_ID') || val('input[name=USER_ID]') || val('input#SESSION_USER_ID');
-    const empNo = val('input#EMP_NO') || val('input[name=EMP_NO]') || val('input#LOGIN_EMP_NO');
-    let userNm = val('input#USER_NM') || val('input[name=USER_NM]') || val('input#EMP_NM');
-    if (!userNm && document.body) {   // 레이아웃 좌측의 "OOO님 반갑습니다"
-      const m = /([가-힣A-Za-z]{2,20})\s*님\s*반갑습니다/.exec(document.body.innerText || '');
-      if (m) userNm = m[1];
-    }
-    if (!userId && !empNo && !userNm) return;
-    send({ type: 'rndUser', user: { userId, empNo, userNm, page: location.pathname, ts: Date.now() } });
+    let lastKey = '';
+    const attempt = () => {
+      let userId = val('input#USER_ID') || val('input[name=USER_ID]') || val('input#SESSION_USER_ID') || val('input#MAND_USER_ID') || val('input[name=MAND_USER_ID]');
+      if (!userId) {   // 인라인 스크립트의 var gUserId = "11115";
+        for (const s of document.scripts) {
+          if (s.src) continue;
+          const m = /gUserId\s*=\s*['"]([^'"]+)['"]/.exec(s.textContent || '');
+          if (m) { userId = m[1].trim(); break; }
+        }
+      }
+      const empNo = val('input#EMP_NO') || val('input[name=EMP_NO]') || val('input#LOGIN_EMP_NO');
+      let userNm = val('input#USER_NM') || val('input[name=USER_NM]') || val('input#EMP_NM');
+      if (!userNm && document.body) {   // "OOO님, 안녕하세요." / "OOO님 반갑습니다"
+        const m = /([가-힣A-Za-z]{2,20})\s*님[,\s]*(?:안녕하세요|반갑습니다)/.exec(document.body.innerText || '');
+        if (m) userNm = m[1];
+      }
+      if (!userId && !empNo && !userNm) return false;
+      const key = [userId, empNo, userNm].join('|');
+      if (key === lastKey) return true;
+      lastKey = key;
+      send({ type: 'rndUser', user: { userId, empNo, userNm, page: location.pathname, ts: Date.now() } });
+      return true;
+    };
+    attempt();
+    for (const ms of [1000, 3000, 8000]) setTimeout(attempt, ms);
   })();
 
   const LABELS = ['임시저장', '보완요청', '신청', '구매요청'];

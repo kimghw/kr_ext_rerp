@@ -14,9 +14,11 @@
     <label class="check"><input type="checkbox" id="onlyMyProjects"> 참여인력에 본인이 포함된 과제만 표시 (과제정보 &gt; 참여인력, 참여구분 "계속" 기준)</label>
     <div class="grid">
       <label>본인 학번/사번 <input type="text" id="myEmpNo" placeholder="비우면 자동 감지값 사용"></label>
+      <label>본인 이름 <input type="text" id="myName" placeholder="사번을 모르면 이름으로 대조"></label>
       <label>자동 감지 <span id="rndUserInfo" class="muted">R&amp;D ERP를 열면 로그인 사용자 정보가 자동으로 기록됩니다.</span></label>
     </div>
-    <p class="help">참여 여부는 과제별로 12시간 동안 기억하며, 사번이 바뀌면 다시 판정합니다.</p>
+    <div id="nameCandidates" class="help" hidden></div>
+    <p class="help">사번이 참여인력과 맞으면 사번만 씁니다. 이름으로만 대조할 때 같은 이름이 둘 이상이면 과제를 표시하지 않고 위에 후보를 보여주니 본인 사번을 고르세요. 참여 여부는 과제별로 12시간 동안 기억하며, 사번/이름이 바뀌면 다시 판정합니다.</p>
   </section>
 
   <section class="card">
