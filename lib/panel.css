@@ -207,8 +207,12 @@ a.krext-chip:hover { filter: brightness(.94); }
 .krext-part-cnt { font-size: 11px; white-space: nowrap; }
 .krext-part-table { margin-top: 6px; }
 .krext-part-table td.krext-part-rspr { white-space: nowrap; font-weight: 600; }
-.krext-part-table td.krext-part-nm { max-width: 220px; }
+.krext-part-table td.krext-part-nm { width: 100%; min-width: 80px; }   /* 남는 폭은 모두 과제명에 (참여율·기간 칸은 내용 폭만 차지) */
 .krext-part-table td.krext-part-nm a { color: inherit; }
+/* 과제 행: [한 글자 역할 태그][과제명 — 전체 이름을 2줄까지, 넘치면 …] */
+.krext-part-nmw { display: flex; align-items: flex-start; gap: 4px; min-width: 0; }
+.krext-part-nmw .krext-tag { flex: none; padding: 0 4px; margin-top: 1px; }
+.krext-part-link { flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all; line-height: 1.3; }
 .krext-part-table td.krext-part-term { white-space: nowrap; font-size: 11px; }
 .krext-part-table tfoot td { border-top: 2px solid #d5dbe3; background: #f3f5f8; font-weight: 700; }
 .krext-part-table tr.krext-part-sub td { background: #fbfbfe; border-bottom: 1px dotted #e3e6ef; font-size: 11.5px; padding-top: 2px; padding-bottom: 2px; }
@@ -236,7 +240,7 @@ a.krext-chip:hover { filter: brightness(.94); }
 .krext-pay-form input[data-pay="name"] { flex: 1 1 110px; min-width: 90px; }
 .krext-pay-form input[data-pay="amt"] { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
 /* 과제 참여율: 예비 참여율(참여 계획) 줄 · 입력 폼 · 기간 달력 (lib/part.js) */
-.krext-part-table td.krext-part-nm .krext-plus-btn { width: 16px; height: 16px; margin-left: 4px; font-size: 12px; }
+.krext-part-table td.krext-part-term .krext-plus-btn { width: 16px; height: 16px; margin-left: 4px; font-size: 12px; }
 .krext-part-table tr.krext-part-plan td { background: #fbfbfe; border-bottom: 1px dotted #e3e6ef; font-size: 11.5px; padding-top: 2px; padding-bottom: 2px; }
 .krext-part-table tr.krext-part-plan td.krext-plan-rate { color: #6b5cc4; font-weight: 700; }
 .krext-part-at { margin-left: 4px; font-size: 11px; color: #6b7480; white-space: nowrap; }
