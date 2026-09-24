@@ -5,8 +5,11 @@
 <title>R&D ERP 현황</title>
 <link rel="stylesheet" href="../lib/panel.css">
 <style>
-  body { margin: 0; width: 460px; background: #fff; font: 13px/1.45 -apple-system, "Segoe UI", "Malgun Gothic", "맑은 고딕", Roboto, sans-serif; }
-  .toolbar { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid #e1e6ee; background: #f7f9fc; }
+  /* 팝업 창은 최대 600px. 문서는 스크롤하지 않고 패널만 스크롤해(이중 스크롤 방지) 아래 툴바는 항상 보이게 */
+  html, body { margin: 0; overflow: hidden; }
+  body { width: 460px; max-height: 600px; display: flex; flex-direction: column; background: #fff; font: 13px/1.45 -apple-system, "Segoe UI", "Malgun Gothic", "맑은 고딕", Roboto, sans-serif; }
+  .krext-panel.krext-popup { flex: 1 1 auto; min-height: 0; max-height: none; overflow: auto; }
+  .toolbar { flex: none; display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid #e1e6ee; background: #f7f9fc; }
   .toolbar a, .toolbar button { flex: 1; text-align: center; padding: 6px 4px; border: 1px solid #c9d1dc; border-radius: 6px; background: #fff; color: #1f4e9c; text-decoration: none; font: inherit; cursor: pointer; }
   .toolbar a:hover, .toolbar button:hover { background: #eef3fa; }
 </style>

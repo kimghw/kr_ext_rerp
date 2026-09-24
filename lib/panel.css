@@ -2,7 +2,7 @@
 .krext-panel { position: fixed; top: 76px; right: 16px; width: 440px; max-height: calc(100vh - 100px); overflow: auto; z-index: 2147483000;
   box-sizing: border-box; background: #fff; color: #222; border: 1px solid #d5dbe3; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.14);
   font: 13px/1.45 -apple-system, "Segoe UI", "Malgun Gothic", "맑은 고딕", Roboto, sans-serif; text-align: left; }
-.krext-panel.krext-popup { position: static; width: 460px; max-height: 560px; border: 0; border-radius: 0; box-shadow: none; }
+.krext-panel.krext-popup { position: static; width: 460px; max-height: 560px; /* 실제 높이는 popup.html 의 flex 배치가 정함(max-height: none 으로 덮어씀) */ border: 0; border-radius: 0; box-shadow: none; }
 .krext-panel.krext-collapsed { width: auto; overflow: hidden; }
 /* 본문 삽입 모드: 카드처럼 페이지 흐름에 배치, 두 구역을 가로로 */
 .krext-panel.krext-inline { position: static; width: auto; max-height: none; overflow: visible; margin: 0 0 24px; box-shadow: 0 1px 3px rgba(0,0,0,.08); border-top: 3px solid #1f4e9c; }
@@ -115,7 +115,7 @@ a.krext-chip:hover { filter: brightness(.94); }
 .krext-prj-nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .krext-prj-cnt { flex: none; font-weight: 700; color: #6b7480; }
 .krext-prj-cnt.krext-hot { color: #1a5fb4; }
-.krext-prj-amt { flex: none; width: 80px; text-align: right; font-weight: 700; color: #172b4d; font-variant-numeric: tabular-nums; }
+.krext-prj-amt { flex: none; width: 80px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }   /* 색은 행 기본색(#222) — 책임자 성명과 같은 채도·명도 */
 .krext-prj-amt.krext-red { color: #d7263d; }
 .krext-prj-body { padding: 4px 8px 8px 22px; background: #fbfcfe; }
 .krext-cards { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -156,10 +156,9 @@ a.krext-chip:hover { filter: brightness(.94); }
 /* 집행비율 막대 */
 .krext-prj-rate { flex: none; width: 108px; display: inline-flex; justify-content: flex-end; }
 .krext-rate { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.krext-rate-v { min-width: 44px; text-align: right; font-weight: 700; }
+.krext-rate-v { min-width: 44px; text-align: right; font-weight: 600; }   /* 책임자 성명(.krext-prj-rspr)과 같은 색·굵기 */
 .krext-bar { display: inline-block; width: 52px; height: 7px; border-radius: 4px; background: #e6ebf2; overflow: hidden; vertical-align: middle; }
 .krext-bar-fill { display: block; height: 100%; background: #4d8fe6; border-radius: 4px; }
-.krext-bar-fill.krext-bar-warn { background: #f0a020; }
 .krext-bar-fill.krext-bar-over { background: #d7263d; }
 .krext-rate-plus { color: #b3261e; font-weight: 600; }
 /* 비목별 잔액 표 */

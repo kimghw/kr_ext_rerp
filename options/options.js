@@ -346,6 +346,8 @@
   }
 
   function fill(s) {
+    $('eclassPanel').checked = s.eclassPanel !== false;
+    togglePanelModeBox();
     document.querySelector(`input[name=panelMode][value="${s.panelMode === 'float' ? 'float' : 'inline'}"]`).checked = true;
     $('onlyMyProjects').checked = !!s.onlyMyProjects;
     $('myEmpNo').value = s.myEmpNo || '';
@@ -429,6 +431,7 @@
       if (ov.include.size || ov.exclude.size) cardOverrides[prjNo] = { include: Array.from(ov.include), exclude: Array.from(ov.exclude) };
     }
     return S.merge(S.DEFAULTS, {
+      eclassPanel: $('eclassPanel').checked,
       panelMode: document.querySelector('input[name=panelMode]:checked').value,
       accountRule: $('accountRule').checked,
       showShared: $('showShared').checked,
@@ -501,6 +504,14 @@
     updateMonitorSummary();
   }
   document.querySelectorAll('input[name=cardFilterMode]').forEach((r) => r.addEventListener('change', toggleCardList));
+
+  /* eClass 표시: 패널을 표시하지 않으면 위치 선택을 흐리게 */
+  function togglePanelModeBox() {
+    const on = $('eclassPanel').checked;
+    $('panelModeBox').style.opacity = on ? '1' : '.45';
+    $('panelModeBox').style.pointerEvents = on ? '' : 'none';
+  }
+  $('eclassPanel').addEventListener('change', togglePanelModeBox);
 
   /* 청구서(카드) 입력 도우미: 사용 안 함이면 세부 항목을 흐리게 */
   function toggleClaimBox() {

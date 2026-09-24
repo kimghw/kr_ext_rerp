@@ -1,11 +1,13 @@
 /* eclass.krs.co.kr 홈: R&D ERP 현황 패널 삽입
  * panelMode 'inline' : 본문(Popup Notice 카드 위)에 카드 형태로 삽입. 삽입 위치를 못 찾으면 float 로 대체
- * panelMode 'float'  : 우측 상단에 띄움 */
+ * panelMode 'float'  : 우측 상단에 띄움
+ * eclassPanel false  : 넣지 않음(툴바 팝업만 사용). 설정에서 끄면 열려 있는 화면에서도 바로 숨기고, 다시 켜면 새로고침 뒤 나타남 */
 (async () => {
   if (document.getElementById('krext-panel')) return;
 
   let settings = null;
   try { settings = await KRX_SETTINGS.load(); } catch (e) {}
+  if (settings && settings.eclassPanel === false) return;
   const wantInline = !settings || settings.panelMode !== 'float';
 
   const host = document.createElement('div');
@@ -134,6 +136,8 @@
   try {
     chrome.storage.onChanged.addListener((ch, area) => {
       try { if (area === 'local' && ch.cache && ch.cache.newValue) { state.data = ch.cache.newValue; if (!state.loading) draw(); } } catch (e) {}
+      // 설정의 "eClass 홈에 패널 표시"를 끄면(설정은 sync, 안 되면 local 에 저장) 새로고침 없이 바로 숨기고, 켜면 다시 보임
+      try { if (ch.settings && ch.settings.newValue) { const on = ch.settings.newValue.eclassPanel !== false; (host.closest('.krext-col') || host).style.display = on ? '' : 'none'; } } catch (e) {}
     });
   } catch (e) {}
 

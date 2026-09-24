@@ -94,10 +94,13 @@
   </details>
 
   <section class="card">
-    <h2>표시 위치</h2>
-    <label class="radio"><input type="radio" name="panelMode" value="inline"> eClass 본문에 삽입 (Popup Notice 카드 위)</label>
-    <label class="radio"><input type="radio" name="panelMode" value="float"> 우측 상단에 띄우기</label>
-    <p class="help">변경 후 eClass 홈을 새로고침하면 적용됩니다.</p>
+    <h2>eClass 표시</h2>
+    <label class="check"><input type="checkbox" id="eclassPanel"> eClass 홈에 패널 표시 (끄면 툴바 아이콘 팝업으로만 봅니다. 배지·자동 갱신은 그대로)</label>
+    <div id="panelModeBox">
+      <label class="radio"><input type="radio" name="panelMode" value="inline"> eClass 본문에 삽입 (Popup Notice 카드 위)</label>
+      <label class="radio"><input type="radio" name="panelMode" value="float"> 우측 상단에 띄우기</label>
+    </div>
+    <p class="help">표시를 끄면 저장 즉시 열려 있는 eClass 화면에서도 패널이 사라지고, 다시 켜거나 위치를 바꾼 뒤에는 eClass 홈을 새로고침하면 적용됩니다.</p>
   </section>
 
   <section class="card">
