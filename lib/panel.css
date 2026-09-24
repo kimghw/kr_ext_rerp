@@ -21,7 +21,6 @@
 /* 미승인내역: 본문 삽입 모드에서도 보완요청 / 신청 두 칸을 세로 쌓기 대신 한 줄에 */
 .krext-panel.krext-inline .krext-unappr .krext-stats { flex-direction: row; }
 .krext-panel.krext-inline .krext-unappr .krext-stat { flex: 1 1 0; min-width: 0; }
-.krext-panel.krext-inline .krext-shop { max-width: 320px; }
 .krext-panel.krext-inline .krext-prj-nm { white-space: normal; }
 .krext-col { padding: 0 12px; }
 @media (max-width: 900px) { .krext-panel.krext-inline .krext-cols { grid-template-columns: 1fr; } }
@@ -105,6 +104,7 @@ a.krext-chip:hover { filter: brightness(.94); }
 .krext-prj-link { display: flex; align-items: center; justify-content: center; width: 32px; flex: none; padding: 0; border-left: 1px solid #e3eaf3; color: #93a4ba !important; font-size: 13px; text-decoration: none !important; }
 .krext-prj-link svg { display: block; }
 .krext-prj-link:hover { background: #eef3fa; color: #1a5fb4 !important; }
+.krext-prj-link.krext-on { background: #e3edfb; color: #1a5fb4 !important; }   /* 줄 끝 청구 아이콘: 청구 준비 요소를 보이는 중 */
 .krext-open > .krext-prj-line { background: #f4f7fb; }
 .krext-prj-row:hover { background: #f4f7fb; text-decoration: none !important; }
 .krext-open > .krext-prj-row, .krext-open > .krext-prj-line > .krext-prj-row { background: #f4f7fb; }
@@ -126,7 +126,10 @@ a.krext-chip:hover { filter: brightness(.94); }
 .krext-cards tr.krext-clickable:hover td { background: #eef3fa; }
 .krext-mono { font-family: Consolas, "Courier New", monospace; white-space: nowrap; }
 .krext-num { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.krext-shop { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.krext-shop { white-space: nowrap; }
+.krext-shop-nm { display: inline-block; max-width: 150px; /* 약 12자, 넘치면 … (전체 이름은 툴팁). 뒤의 취소·중복의심 표는 잘리지 않게 이름만 제한 */ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.krext-panel.krext-inline .krext-shop-nm { max-width: 320px; }   /* 삽입 패널은 표가 넓어 가맹점 이름을 더 보임 */
+.krext-cards td.krext-card { white-space: nowrap; }
 .krext-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 16px; padding: 7px 10px; font-size: 12px; color: #607089; background: #fff; border-top: 1px solid #e3eaf3; }
 .krext-panel.krext-inline .krext-foot { padding: 7px 14px; }
 .krext-foot a { display: inline-flex; align-items: center; gap: 3px; color: #1a5fb4; white-space: nowrap; }
@@ -241,6 +244,8 @@ a.krext-chip:hover { filter: brightness(.94); }
 .krext-part-table tr.krext-part-counted td.krext-num { font-weight: 700; }
 /* 급여·연구수당 (HR): 미승인내역 아래 왼쪽 칸. 받기 예정 연구수당 목록/입력 폼 */
 .krext-side { min-width: 0; }
+.krext-panel.krext-inline .krext-cols > .krext-sec { min-width: 0; }   /* 오른쪽 구역 폭은 표 내용과 무관하게 격자가 정한다 (넓은 표가 왼쪽 구역을 밀지 않게) */
+.krext-panel.krext-inline .krext-cards th { white-space: nowrap; }
 .krext-pay .krext-stat-val { font-size: 17px; }
 /* 급여·연구수당은 기본 숨김: 버튼 하나만 보이고 누르면 펼침 (급여 정보라 화면에 늘 띄우지 않음) */
 .krext-pay-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid #c9d1dc; border-radius: 7px; background: #fff; color: #1a5fb4; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
@@ -297,4 +302,44 @@ a.krext-chip:hover { filter: brightness(.94); }
 .krext-cal-foot { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .krext-cal-foot button { height: 22px; padding: 0 7px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #1a5fb4; font-family: inherit; font-size: 11px; cursor: pointer; }
 .krext-cal-foot button:hover { background: #eef3fa; }
+/* 청구 준비 (lib/prep.js): 미청구 거래 행 밑 "↳ …" 둘째 줄(tr.krext-prep)의 "[청구종류 ▾] [청구내역(적요)] [파일 칩 …] [첨부 파일 선택 또는 끌어다 놓기] 상태 [청구서 작성] 지움" 요소.
+   거래(지출) 정보 행과 한 줄에 섞지 않는다. 파일을 끌어 오면 거래 행(과 줄)이 함께 파랗게 */
+.krext-cards tr.krext-prep td { background: #fbfbfe; border-bottom: 1px solid #eef1f5; padding: 3px 6px 4px; font-size: 11px; color: #4b5563; }
+.krext-cards tr.krext-prep-set td { background: #f8f6ff; }
+.krext-prep-in { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-height: 22px; }
+.krext-prep-in .krext-plan-ind { cursor: help; }
+.krext-prep-type { height: 22px; padding: 0 4px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #222; font-family: inherit; font-size: 11px; max-width: 150px; }
+.krext-prep-type:focus { outline: none; border-color: #4d8fe6; box-shadow: 0 0 0 2px rgba(77,143,230,.2); }
+.krext-prep-type.krext-on { border-color: #b7cdf0; background: #eaf1ff; color: #245fbd; font-weight: 600; }
+/* 청구내역(적요) 입력란: 남는 폭을 첨부 구역과 나눠 갖고, 좁으면 다음 줄로 */
+.krext-prep-ptcl { flex: 1 1 200px; min-width: 140px; max-width: 480px; height: 22px; padding: 0 6px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #222; font-family: inherit; font-size: 11px; }
+.krext-prep-ptcl::placeholder { color: #9aa1ab; }
+.krext-prep-ptcl:focus { outline: none; border-color: #4d8fe6; box-shadow: 0 0 0 2px rgba(77,143,230,.2); }
+.krext-prep-ptcl.krext-on { border-color: #b7cdf0; background: #f6f9ff; }
+.krext-prep-files { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.krext-prep-chip { display: inline-flex; align-items: center; gap: 3px; max-width: 220px; padding: 0 3px 0 6px; border: 1px solid #d9d2f2; border-radius: 10px; background: #f1edfc; color: #4a3d8f; line-height: 18px; white-space: nowrap; }
+.krext-prep-chip svg { width: 11px; height: 11px; flex: none; }
+.krext-prep-chip .krext-prep-chip-nm { overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.krext-prep-chip .krext-dim { font-size: 10px; }
+.krext-prep-chip button { border: 0; background: transparent; color: #8a919c; cursor: pointer; padding: 0 3px; font-size: 12px; line-height: 16px; border-radius: 4px; font-family: inherit; }
+.krext-prep-chip button:hover { background: #e6e0fa; color: #4a3d8f; }
+.krext-prep-drop { display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border: 1px dashed #c9d1dc; border-radius: 10px; color: #8a919c; line-height: 18px; white-space: nowrap; }
+.krext-prep-drop svg { width: 11px; height: 11px; }
+.krext-prep-drop.krext-prep-drop-off { border-style: dotted; }
+.krext-prep-drop[data-act] { cursor: pointer; }   /* 클릭 → 파일 선택 창 (prep.js openPicker) */
+.krext-prep-drop[data-act]:hover { border-color: #4d8fe6; color: #245fbd; background: #eaf1ff; }
+tr.krext-prep-over td { background: #e3edfb !important; }
+tr.krext-prep-over .krext-prep-drop { border-color: #4d8fe6; color: #245fbd; background: #eaf1ff; }
+.krext-prep-state { white-space: nowrap; color: #1a7f37; }
+.krext-prep-state.krext-err { color: #b3261e; white-space: normal; }
+.krext-prep-state.krext-prep-running { color: #245fbd; }
+.krext-prep-btn { height: 22px; padding: 0 8px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #1a5fb4; font-family: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.krext-prep-btn:hover:not(:disabled) { background: #eef3fa; border-color: #b7cdf0; }
+.krext-prep-btn:disabled { opacity: .5; cursor: default; }
+.krext-prep-btn.krext-prep-run { background: #1f4e9c; border-color: #1f4e9c; color: #fff; font-weight: 600; }
+.krext-prep-btn.krext-prep-run:hover:not(:disabled) { background: #17407f; }
+.krext-prep-x { border: 0; background: transparent; color: #8a919c; cursor: pointer; padding: 0 4px; font-family: inherit; font-size: 11px; line-height: 18px; border-radius: 4px; }
+.krext-prep-x:hover { background: #e6e9ee; color: #4b5563; }
+.krext-prj-prep { margin-left: 4px; font-size: 10.5px; font-weight: 600; color: #6b5cc4; }
+.krext-cards tr.krext-prep-has td { border-bottom: 0; }
 @media (max-width: 900px) { .krext-panel.krext-float { width: calc(100vw - 32px); right: 16px; } }

@@ -25,7 +25,9 @@
           if (m) { userId = m[1].trim(); break; }
         }
       }
-      const empNo = val('input#EMP_NO') || val('input[name=EMP_NO]') || val('input#LOGIN_EMP_NO');
+      // EMP_NO 입력칸은 참여인력·인사 화면의 "대상자"(선택한 참여연구원) 사번이라 읽지 않는다 — 2026-09-24: 다른 연구원 사번이 본인으로 섞여 그 사람 과제·계상률이 본인 것으로 보였음.
+      // 이 ERP 의 사번은 USER_ID(MAND_USER_ID / gUserId)와 같다
+      const empNo = val('input#LOGIN_EMP_NO');
       let userNm = val('input#USER_NM') || val('input[name=USER_NM]') || val('input#EMP_NM');
       if (!userNm && document.body) {   // "OOO님, 안녕하세요." / "OOO님 반갑습니다"
         const m = /([가-힣A-Za-z]{2,20})\s*님[,\s]*(?:안녕하세요|반갑습니다)/.exec(document.body.innerText || '');

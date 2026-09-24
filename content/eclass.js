@@ -61,7 +61,7 @@
   }
   if (!inline) { host.classList.add('krext-float'); document.body.appendChild(host); }
 
-  const state = { mode: inline ? 'inline' : 'page', loading: true, data: null, fatal: null, collapsed: false, expanded: new Set(), rndUrl: null, view: 'project', section: 'cards', version: '',
+  const state = { mode: inline ? 'inline' : 'page', loading: true, data: null, fatal: null, collapsed: false, expanded: new Set(), prepOpen: new Set() /* 청구 준비 요소를 보이는 과제·카드 묶음 (줄 끝 청구 아이콘, lib/prep.js) */, rndUrl: null, view: 'project', section: 'cards', version: '',
     plans: {}, planEdit: null, planDraft: null, planError: '' };   // 예상 비용 (lib/plan.js)
   try { state.version = chrome.runtime.getManifest().version; } catch (e) {}
   try {
@@ -74,6 +74,7 @@
   try { state.plans = await KRX_PLAN.load(); } catch (e) {}
   try { state.payPlans = await KRX_PAY.load(); } catch (e) {}   // 받기 예정 연구수당 (lib/pay.js)
   try { state.partPlans = await KRX_PART.load(); } catch (e) {}   // 예비 참여율(참여 계획) (lib/part.js)
+  try { state.prep = await KRX_PREP.load(); } catch (e) {}        // 청구 준비: 거래별 청구종류·첨부 파일 (lib/prep.js)
   const anchors = Array.from(document.querySelectorAll('a[href]'));
   const link = anchors.find((x) => /rnd\.krs\.co\.kr/i.test(x.href));
   state.rndUrl = link ? link.href : null;
@@ -84,6 +85,7 @@
   KRX_PLAN.bind(host, state, draw);   // 과제집행비율 표의 예상 비용 입력(＋/수정/삭제) 처리
   KRX_PAY.bind(host, state, draw);    // 급여·연구수당 구역의 받기 예정 연구수당 입력(＋/수정/삭제) 처리
   KRX_PART.bind(host, state, draw);   // 과제 참여율 표의 참여 계획 입력(＋/수정/삭제, 기간 달력) 처리
+  KRX_PREP.bind(host, state, draw);   // 카드미청구 거래 행 밑 둘째 줄의 청구 준비(청구종류 select, 청구내역 입력란, 파일 드래그 앤 드롭·지우기, 청구서 작성) 처리
 
   /* 확장이 새로고침/업데이트되면 이 스크립트는 확장과 연결이 끊긴다(Extension context invalidated). 예외 대신 안내 표시 */
   const alive = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; } };
@@ -123,7 +125,7 @@
     if (!alive()) { state.loading = false; draw(); showStale(); return; }
     state.loading = true; state.fatal = null; draw();
     try {
-      const res = await chrome.runtime.sendMessage({ type: 'getData', force: !!force });
+      const res = await chrome.runtime.sendMessage({ type: 'getData', force: !!force, full: !!force });   // ↻: 참여인력(계상률) 캐시(2시간)도 건너뛰고 다시 조회
       if (res && !res.error) state.data = res; else state.fatal = (res && res.error) || '응답 없음';
     } catch (e) {
       const msg = String((e && e.message) || e);

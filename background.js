@@ -1,11 +1,11 @@
 /* 서비스워커: 데이터 수집/캐시, 배지, 캡처 로그 저장, 주기 갱신 */
-importScripts('lib/format.js', 'lib/settings.js', 'lib/rnd-api.js', 'lib/hr-api.js');
+importScripts('lib/format.js', 'lib/settings.js', 'lib/rnd-api.js', 'lib/hr-api.js', 'lib/prep-store.js');
 
 const CACHE_KEY = 'cache';
 const CAPTURE_KEY = 'captureLog';
 const CAPTURE_MAX = 150;
 const ALARM = 'krext-refresh';
-let inflight = null;
+let inflight = null, inflightFull = false;   // 진행 중인 조회, 그 조회가 참여인력 캐시까지 건너뛰는 전체 조회인지
 let settingsGen = 0;   // 설정이 바뀔 때마다 증가. 조회 도중 바뀌면 그 결과(이전 설정 기준)는 버리고 새 설정으로 다시 조회
 
 async function getCache() { return (await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY] || null; }
@@ -43,8 +43,13 @@ function updateBadge(data) {
   } catch (e) {}
 }
 
-async function refresh(force) {
-  if (inflight) return inflight;
+/* force: 캐시 TTL 과 상관없이 다시 조회. opts.full: 참여인력(계상률) 캐시(2시간)도 건너뛰고 과제마다 다시 조회 — 패널·팝업의 ↻ 처럼 사용자가 직접 누른 새로고침만.
+ * 알람·설정 변경·청구서 작성 뒤의 자동 조회는 참여인력 캐시를 그대로 쓴다 (과제마다 한 번씩 부르는 조회라 무거움).
+ * 보통 조회가 진행 중일 때 전체 조회를 요청하면 그 조회가 끝난 뒤 이어서 전체 조회를 한다 */
+async function refresh(force, opts) {
+  let full = !!(opts && opts.full);
+  if (inflight) return (full && !inflightFull) ? inflight.then(() => refresh(true, opts), () => refresh(true, opts)) : inflight;
+  inflightFull = full;
   inflight = (async () => {
     for (;;) {
       const gen = settingsGen;
@@ -53,7 +58,8 @@ async function refresh(force) {
       const ttl = Math.max(1, KRX_FMT.num(settings.refreshMinutes) || 10) * 60000;
       // 오류로 끝난 결과(예: 재로드 직후 일시적 네트워크 오류)는 TTL 과 상관없이 다시 조회
       if (!force && cache && cache.ts && !cache.error && Date.now() - cache.ts < ttl) { updateBadge(cache); return cache; }
-      let data = await KRX_API.collect(settings);
+      let data = await KRX_API.collect(settings, { freshMembership: full });
+      full = false;   // 참여인력은 방금 다시 조회했으므로 이 뒤의 재조회(설정 변경·사번 감지)는 캐시로
       if (gen !== settingsGen) { force = true; continue; }   // 조회 중 설정이 바뀜(예: 과제 제외) → 이 결과는 캐시하지 않고 다시 조회
       if (data.memberFilter === 'no-id' && !data.loginRequired) {
         // 사번/이름을 아직 모름 → 열려 있는 ERP 탭이 있으면 브리지를 넣어 직접 읽어 온 뒤 한 번 더 판정
@@ -75,10 +81,70 @@ async function refresh(force) {
         });
       }
       updateBadge(data);
+      // 청구 준비(패널에서 고른 청구종류·첨부 파일): 미청구 목록에서 사라진 거래의 항목은 7일 뒤 정리 (lib/prep-store.js)
+      if (!data.loginRequired && !data.error && data.memberFilter !== 'no-id') { try { await KRX_PREP_STORE.cleanup(prepKeysOf(data)); } catch (e) {} }
       return data;
     }
-  })().finally(() => { inflight = null; });
+  })().finally(() => { inflight = null; inflightFull = false; });
   return inflight;
+}
+
+/* 지금 미청구 목록에 있는 거래의 청구 준비 키(승인번호|카드 뒤 4자리): 과제별 카드 + 카드별 묶음 + 미귀속 묶음 */
+function prepKeysOf(data) {
+  const keys = new Set();
+  const add = (c) => { const k = KRX_FMT.prepKey(c && c.apprNo, c && (c.cardNo || c.tail)); if (k) keys.add(k); };
+  for (const p of data.projects || []) for (const c of p.cards || []) add(c);
+  for (const card of (data.cards || []).concat(data.unattributed || [])) for (const t of card.txs || []) add(t);
+  return keys;
+}
+
+/* 청구 준비 "청구서 작성": R&D ERP 청구서(카드) 화면을 비활성 탭으로 열어(레이아웃 딥링크 #krext, rnd-hook.js) 그 거래 행을 자동 선택하고,
+ * content/rnd-claim.js 가 세목·청구종류를 고르고 청구내역(적요)을 적고 파일을 올린 뒤 "내역 추가"를 눌러 결과를 prepRunResult 로 보고한다 (결재요청은 하지 않음).
+ * 성공하면 탭을 닫고 미청구 목록을 다시 조회(거래가 사라짐), 실패하면 탭을 남겨 두어 패널의 "탭 보기"로 이어서 할 수 있게 한다.
+ * 제한 시간(4분) 안에 보고가 없으면 실패로 표시 */
+const RND_MAIN = 'https://rnd.krs.co.kr/rderp_layoutMain.act';
+const PREP_RUN_TIMEOUT = 4 * 60000;
+async function prepRun(key) {
+  const m = await KRX_PREP_STORE.loadMeta();
+  const e = m[key];
+  if (!e) return { ok: false, error: '준비 항목이 없습니다' };
+  if (!e.type) return { ok: false, error: '청구종류를 먼저 고르세요' };
+  if (e.run && e.run.state === 'running' && Date.now() - e.run.ts < PREP_RUN_TIMEOUT) return { ok: false, error: '이미 작성 중입니다' };
+  const req = { open: 'rexpe_0083_01.act', title: '청구서(카드)', menuId: 'menu_id_362', q: 'PRJ_NO=' + encodeURIComponent(e.prjNo || ''), appr: e.appr, card: e.card4, auto: 'add' };
+  let tab = null;
+  try { tab = await chrome.tabs.create({ url: RND_MAIN + '#krext=' + encodeURIComponent(JSON.stringify(req)), active: false }); }
+  catch (x) { return { ok: false, error: '탭을 열지 못했습니다: ' + String((x && x.message) || x) }; }
+  await KRX_PREP_STORE.setRun(key, { state: 'running', ts: Date.now(), tabId: tab.id, msg: '' });
+  setTimeout(async () => {
+    try {
+      const cur = (await KRX_PREP_STORE.loadMeta())[key];
+      if (cur && cur.run && cur.run.state === 'running' && cur.run.tabId === tab.id) await KRX_PREP_STORE.setRun(key, { state: 'failed', ts: Date.now(), tabId: tab.id, msg: '제한 시간 안에 끝나지 않았습니다 — 탭에서 확인하세요' });
+    } catch (x) {}
+  }, PREP_RUN_TIMEOUT);
+  return { ok: true, tabId: tab.id };
+}
+async function prepRunResult(msg, sender) {
+  const tabId = sender && sender.tab ? sender.tab.id : null;
+  const key = String(msg.key || '') || await KRX_PREP_STORE.keyFor(msg.appr, '');
+  const alerts = Array.isArray(msg.alerts) ? msg.alerts.filter(Boolean) : [];
+  const text = String(msg.msg || '') + (!msg.ok && alerts.length && !String(msg.msg || '').includes(alerts[alerts.length - 1]) ? ` (${alerts[alerts.length - 1]})` : '');
+  if (key) await KRX_PREP_STORE.setRun(key, { state: msg.ok ? 'done' : 'failed', ts: Date.now(), tabId, msg: text });
+  if (msg.ok) {
+    if (tabId != null) setTimeout(() => { try { chrome.tabs.remove(tabId).catch(() => {}); } catch (x) {} }, 2500);
+    chrome.storage.local.remove(CACHE_KEY).then(() => refresh(true)).catch(() => {});   // 청구된 거래는 미청구 목록에서 빠지므로 다시 조회
+  }
+  return { ok: true, key };
+}
+async function prepFocusTab(key) {
+  const e = (await KRX_PREP_STORE.loadMeta())[key];
+  const tabId = e && e.run && e.run.tabId;
+  if (tabId == null) return { ok: false, error: '열린 탭이 없습니다' };
+  try {
+    const t = await chrome.tabs.get(tabId);
+    await chrome.tabs.update(tabId, { active: true });
+    try { await chrome.windows.update(t.windowId, { focused: true }); } catch (x) {}
+    return { ok: true };
+  } catch (x) { return { ok: false, error: '그 탭은 이미 닫혔습니다' }; }
 }
 
 async function appendCapture(entry, sender) {
@@ -310,7 +376,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     switch (msg && msg.type) {
-      case 'getData': return await refresh(!!msg.force);
+      case 'getData': return await refresh(!!msg.force, { full: !!msg.full });   // full: 참여인력 캐시도 건너뜀 (↻)
       case 'jctCaptured': await appendCapture(msg.entry, sender); return { ok: true };
       case 'unapprovedSnapshot': await chrome.storage.local.set({ unapprovedSnapshot: msg.snapshot }); return { ok: true };
       case 'hrPay': { const merged = await mergeHrPay(msg.patch || {}); await patchCacheHrPay(merged); return { ok: true }; }
@@ -320,7 +386,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const u = msg.user || {};
         if (!u.userId && !u.empNo && !u.userNm) return { ok: false };
         const prev = (await chrome.storage.local.get('rndUser')).rndUser || {};
-        const next = { userId: u.userId || prev.userId || '', empNo: u.empNo || prev.empNo || '', userNm: u.userNm || prev.userNm || '', ts: Date.now() };
+        const userId = u.userId || prev.userId || '';
+        let empNo = u.empNo || prev.empNo || '';
+        if (empNo && userId && empNo !== userId) empNo = '';   // 이 ERP 의 사번은 USER_ID 와 같다. 다른 값은 이전 버전 bridge 가 화면의 대상자 EMP_NO 를 잘못 읽은 것이라 버린다
+        const next = { userId, empNo, userNm: u.userNm || prev.userNm || '', ts: Date.now() };
         if (next.userId !== prev.userId || next.empNo !== prev.empNo || next.userNm !== prev.userNm) {
           await chrome.storage.local.set({ rndUser: next, membership: {} });   // 사용자가 바뀌면 참여 판정 캐시 초기화
         } else {
@@ -331,8 +400,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'openOptions': await chrome.runtime.openOptionsPage(); return { ok: true };
       case 'clearCapture': await chrome.storage.local.set({ [CAPTURE_KEY]: [] }); return { ok: true };
       case 'invalidate': await chrome.storage.local.remove(CACHE_KEY); return { ok: true };
+      // 청구 준비 (lib/prep.js 패널 ↔ lib/prep-store.js ↔ content/rnd-claim.js 청구서)
+      case 'prepSetType': return { ok: true, entry: await KRX_PREP_STORE.setType(String(msg.key || ''), msg.meta || {}, msg.value) };
+      case 'prepSetPtcl': return { ok: true, entry: await KRX_PREP_STORE.setPtcl(String(msg.key || ''), msg.meta || {}, msg.value) };   // 청구내역(적요) 글
+      case 'prepAddFiles': return { ok: true, entry: await KRX_PREP_STORE.addFiles(String(msg.key || ''), msg.meta || {}, msg.files || []) };
+      case 'prepRemoveFile': return { ok: true, entry: await KRX_PREP_STORE.removeFile(String(msg.key || ''), String(msg.id || '')) };
+      case 'prepClear': await KRX_PREP_STORE.clear(String(msg.key || '')); return { ok: true };
+      case 'prepClearAll': await KRX_PREP_STORE.clearAll(); return { ok: true };
+      case 'prepGet': return await KRX_PREP_STORE.getEntry(msg.appr, msg.card4, !!msg.withFiles);
+      case 'prepAttached': return { ok: true, entry: await KRX_PREP_STORE.markAttached(String(msg.key || ''), msg.n) };
+      case 'prepStats': return await KRX_PREP_STORE.stats();
+      case 'prepRun': return await prepRun(String(msg.key || ''));              // 패널 "청구서 작성" → 백그라운드 탭
+      case 'prepRunResult': return await prepRunResult(msg, sender);           // ERP 청구서(rnd-claim.js)의 결과 보고
+      case 'prepFocusTab': return await prepFocusTab(String(msg.key || ''));   // 패널 "탭 보기"
       case 'callService': return await KRX_API.call(msg.service, msg.input || {});
-      case 'diagnose': return await KRX_API.diagnose(String(msg.prjNo || '').trim(), await KRX_SETTINGS.load());
+      case 'diagnose': {   // 진단은 그 과제의 참여인력 캐시를 지금 값으로 바꾸므로, 끝나면 패널도 다시 조회해 반영 (캐시 TTL 무시, 다른 과제의 참여인력은 캐시)
+        const r = await KRX_API.diagnose(String(msg.prjNo || '').trim(), await KRX_SETTINGS.load());
+        if (r && r.member) refresh(true).catch(() => {});
+        return r;
+      }
       default: return { error: 'unknown message' };
     }
   })().then(sendResponse, (e) => sendResponse({ error: String((e && e.message) || e), kind: e && e.kind }));

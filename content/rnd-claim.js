@@ -3,7 +3,10 @@
  *  1) 예산(비목) 선택이 비어 있으면 기본값(연구활동비), RCMS 부가정보 > 사용금액구분이 비어 있으면 기본값(본예산)을 채우고
  *  2) "청구" 소제목 옆에 세목(회의비, 연구실운영비 …) 빠른 선택 버튼을 넣고
  *  3) 첨부문서 칸(행)에 파일을 끌어다 놓으면 화면의 파일 입력(input[type=file])에 넣어 첨부 처리를 시킨다.
- * 화면 요소는 ID 를 모르므로 라벨 문구("예산", "RCMS 부가정보", "첨부문서", "청구")로 찾는다. 값은 비어 있을 때만 채운다.
+ *  4) eClass 패널에서 미리 고른 청구종류·적은 청구내역(적요)·첨부 파일(청구 준비, lib/prep.js)이 있는 거래(주소의 krext_appr)면 행 선택 뒤 세목·청구종류를 고르고 청구내역을 적고 파일을 올리며,
+ *     krext_auto=add(패널의 "청구서 작성", 백그라운드 탭)이면 "내역 추가"까지 눌러 결과를 백그라운드에 보고한다 (아래 "청구 준비" 구역).
+ * 화면 요소는 ID 를 모르므로 라벨 문구("예산", "RCMS 부가정보", "첨부문서", "청구")로 찾는다. 값은 비어 있을 때만 채운다
+ * (예외: 청구내역 칸은 고정 ID #REQ_PTCL 로 찾고, 패널에 적은 청구내역은 이 거래에 대한 명시적 입력이라 화면 기본값(카드 메모)을 덮어쓴다).
  * 설정 claimHelper(설정 페이지 "청구서(카드) 입력 도우미")로 켜고 끈다. */
 (() => {
   if (window.__krextClaim) return;
@@ -20,7 +23,7 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const visible = (el) => !!el && el.isConnected && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
   const log = (...a) => { try { console.debug('[krext claim]', ...a); } catch (e) {} };
-  const OURS = '.krext-qp,.krext-drop-hint,.krext-toast';
+  const OURS = '.krext-qp,.krext-drop-hint,.krext-toast,.krext-prep-bar';
 
   /* ---------- 상태 ---------- */
   let cfg = null;          // settings.claimHelper (+ picks: 파싱된 빠른 선택 목록)
@@ -48,6 +51,7 @@
       const s = await S.load();
       const c = Object.assign({}, (S.DEFAULTS.claimHelper || {}), s.claimHelper || {});
       c.picks = parsePicks(c.quickPicks);
+      c.usefacSeqNo = String((s.adv && s.adv.usefacSeqNo) || (S.DEFAULTS.adv && S.DEFAULTS.adv.usefacSeqNo) || '10');   // 파일 직접 업로드(uploadDirect)의 이용기관 일련번호 (화면 hidden 값이 없을 때)
       cfg = c;
     } catch (e) { cfg = null; }   // 확장 컨텍스트가 사라진 경우 등
     if (stopped) return;
@@ -69,6 +73,17 @@
 .krext-dropping,.krext-dropping td,.krext-dropping th{background:#eef5ff!important}
 .krext-dropping{outline:2px dashed #1f4e9c!important;outline-offset:-2px}
 .krext-toast{position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#222;color:#fff;padding:8px 12px;border-radius:6px;font:13px/1.4 "Malgun Gothic","맑은 고딕",sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:.95;max-width:60vw;white-space:pre-wrap}
+/* 청구 준비 안내 막대: 청구내역 폼(예산 행이 든 표) 바로 위 */
+.krext-prep-bar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:4px 0 6px;padding:6px 10px;border:1px solid #b7cdf0;border-radius:6px;background:#eef5ff;font:12px/1.5 "Malgun Gothic","맑은 고딕",sans-serif;color:#1f2f4a}
+.krext-prep-bar .krext-prep-ttl{font-weight:700;color:#1f4e9c}
+.krext-prep-bar .krext-prep-dim{color:#6b7480}
+.krext-prep-bar b{color:#1f4e9c}
+.krext-prep-bar .krext-prep-st{color:#1a7f37}
+.krext-prep-bar .krext-prep-st.krext-err{color:#b3261e}
+.krext-prep-bar .krext-prep-btns{display:inline-flex;gap:4px;margin-left:auto}
+.krext-prep-bar button{font:12px/1.2 "Malgun Gothic","맑은 고딕",sans-serif;padding:3px 9px;border:1px solid #9db3d6;border-radius:12px;background:#fff;color:#1f4e9c;cursor:pointer;white-space:nowrap}
+.krext-prep-bar button:hover{background:#e2ecfa}
+.krext-prep-bar button:disabled{opacity:.5;cursor:default}
 `;
   function ensureStyle() {
     if (document.getElementById('krext-claim-style')) return;
@@ -92,7 +107,7 @@
 
   /* ---------- 화면 요소 찾기 (라벨 문구 기준) ---------- */
   const INLINE = /^(BR|IMG|I|EM|B|STRONG|SPAN|FONT|U|A|LABEL|SUP|SUB)$/;
-  const isOurs = (el) => el.classList && (el.classList.contains('krext-qp') || el.classList.contains('krext-drop-hint') || el.classList.contains('krext-toast'));
+  const isOurs = (el) => !!(el.classList && (el.classList.contains('krext-qp') || el.classList.contains('krext-drop-hint') || el.classList.contains('krext-toast') || el.classList.contains('krext-prep-bar')));
   /* 우리가 넣은 요소를 빼고 "글자만 가진" 요소인지 */
   const isLeaf = (el) => Array.from(el.children).every((c) => isOurs(c) || (INLINE.test(c.tagName) && !c.children.length));
   /* 우리가 넣은 요소를 뺀 글자 */
@@ -209,7 +224,7 @@
    * 빠른 선택 목록의 셋째 값(예: "외부전문가 활용비=외부 전문기술=83")이 있으면, 세목이 그 항목으로 바뀔 때(버튼이든 직접 선택이든)
    * 청구종류 라디오/select 에서 "(83) …" 처럼 코드가 맞는(또는 이름이 맞는) 것을 고른다. 세목이 바뀐 뒤에만 적용하므로
    * 이미 저장된 청구서를 열었을 때의 청구종류는 건드리지 않고, 사용자가 라디오를 직접 바꾼 뒤에는 세목을 다시 바꾸기 전까지 두 번 다시 고르지 않는다 */
-  let watchedSel2 = null, lastSel2Key = null, typeRun = 0;
+  let watchedSel2 = null, lastSel2Key = null, typeRun = 0, typeApplying = false;   // typeApplying: 청구 준비 자동 처리가 "내역 추가" 전에 기다리는 표시
   const sel2Key = (sel) => sel && sel.isConnected ? sel.value + '|' + sel.selectedIndex : '';
   function watchClaimType(f) {
     if (!f.sel2) return;
@@ -250,18 +265,21 @@
   async function applyClaimType(type) {
     const run = ++typeRun;
     const started = Date.now();
-    while (Date.now() - started < 6000 && !stopped && run === typeRun) {   // 세목 변경 뒤 화면이 청구종류 목록을 다시 그릴 때까지 기다림
-      let row = current && current.typeRow && current.typeRow.isConnected ? current.typeRow : null;
-      if (!row) { const f = findForm(); if (f) { current = f; row = f.typeRow; } }
-      const hit = row ? findClaimTypeControl(row, type) : null;
-      if (hit) {
-        if (hit.radio) { if (!hit.radio.checked) hit.radio.click(); }
-        else setOption(hit.select, hit.opt);
-        log('청구종류', type, '→', hit.radio ? radioLabel(hit.radio).trim() : hit.opt.text);
-        return;
+    typeApplying = true;
+    try {
+      while (Date.now() - started < 6000 && !stopped && run === typeRun) {   // 세목 변경 뒤 화면이 청구종류 목록을 다시 그릴 때까지 기다림
+        let row = current && current.typeRow && current.typeRow.isConnected ? current.typeRow : null;
+        if (!row) { const f = findForm(); if (f) { current = f; row = f.typeRow; } }
+        const hit = row ? findClaimTypeControl(row, type) : null;
+        if (hit) {
+          if (hit.radio) { if (!hit.radio.checked) hit.radio.click(); }
+          else setOption(hit.select, hit.opt);
+          log('청구종류', type, '→', hit.radio ? radioLabel(hit.radio).trim() : hit.opt.text);
+          return;
+        }
+        await sleep(250);
       }
-      await sleep(250);
-    }
+    } finally { if (run === typeRun) typeApplying = false; }
   }
 
   /* ---------- 기본값 채우기 ---------- */
@@ -278,13 +296,14 @@
   }
 
   /* ---------- 세목 빠른 선택 버튼 ---------- */
+  /* 세목을 item.kw 로 고른다. 골랐으면 true (청구 준비 자동 처리가 결과를 본다) */
   async function pick(item, btn) {
-    if (picking) return;
+    if (picking) return false;
     picking = true;
     if (btn) btn.disabled = true;
     try {
       let f = (current && current.sel1 && current.sel1.isConnected) ? current : (current = findForm());
-      if (!f || !f.sel1) { toast('청구내역 폼을 찾지 못했습니다.'); return; }
+      if (!f || !f.sel1) { toast('청구내역 폼을 찾지 못했습니다.'); return false; }
       if (cfg.defaultBudget && isEmptySel(f.sel1)) {   // 비목이 비어 있으면 먼저 기본 비목을 고른 뒤 세목 목록이 채워지길 기다림
         const o = matchOption(f.sel1, cfg.defaultBudget);
         if (o) setOption(f.sel1, o);
@@ -293,10 +312,11 @@
       while (Date.now() - started < 5000 && !stopped) {
         if (!f.sel2 || !f.sel2.isConnected) f = current = findForm() || f;
         const opt = f.sel2 ? matchOption(f.sel2, item.kw) : null;
-        if (opt) { setOption(f.sel2, opt); toast(`${item.label} → ${opt.text.trim()}`, 1800); return; }
+        if (opt) { setOption(f.sel2, opt); toast(`${item.label} → ${opt.text.trim()}`, 1800); return true; }
         await sleep(200);
       }
       toast(`'${item.kw}' 항목을 세목 목록에서 찾지 못했습니다.\n예산(비목)을 먼저 골랐는지 확인하세요.`);
+      return false;
     } finally { picking = false; if (btn) btn.disabled = false; }
   }
   const pickBox = () => document.querySelector('.krext-qp');
@@ -395,14 +415,15 @@
       return t === '첨부' || t === '파일첨부' || t === '첨부하기';
     }) || null;
   }
+  /* 반환 { ok, n, reason }: 청구 준비 자동 처리가 결과를 본다. reason: empty(올릴 파일 없음) · input · button · channel · busy · blocked(팝업 차단) · timeout · 팝업 쪽 실패 사유 */
   async function dropFiles(box, files) {
     let list = Array.from(files || []).filter((f) => f && f.name);
-    if (!list.length) return;
+    if (!list.length) return { ok: false, reason: 'empty' };
     const bad = list.filter(alwaysDenied);
     if (bad.length) {
       toast(`첨부할 수 없는 파일 종류라 제외: ${bad.map((f) => f.name).join(', ')}`, 5000);
       list = list.filter((f) => !bad.includes(f));
-      if (!list.length) return;
+      if (!list.length) return { ok: false, reason: 'empty' };
     }
     fiCache.ts = 0;
     const inputs = findFileInputs();
@@ -410,24 +431,31 @@
       const n = await feedFiles(inputs[0], list);
       log('첨부', n, '건 →', inputs[0]);
       toast(`${n}개 파일을 첨부 처리했습니다. 목록에 안 보이면 "첨부" 버튼으로 올려 주세요.`, 3500);
-      return;
+      return { ok: n > 0, n, reason: n > 0 ? '' : 'input' };
     }
     // 파일 입력이 없는 화면(청구서: "첨부" 버튼이 파일등록 팝업 rcomm_0089_01.act 를 연다):
     // 파일을 보관해 두고 팝업을 연 뒤, 팝업에서 도는 이 스크립트가 파일을 받아 목록에 넣고 "업로드"를 누른다
     const btn = findAttachButton(box);
-    if (!btn) { toast('첨부 버튼을 찾지 못했습니다. "첨부" 버튼으로 올려 주세요.', 5000); return; }
-    if (!channel) { btn.click(); toast('첨부 창이 열리면 그 창에 파일을 끌어다 놓고 업로드를 눌러 주세요.', 6000); return; }
+    if (!btn) { toast('첨부 버튼을 찾지 못했습니다. "첨부" 버튼으로 올려 주세요.', 5000); return { ok: false, reason: 'button' }; }
+    if (!channel) { btn.click(); toast('첨부 창이 열리면 그 창에 파일을 끌어다 놓고 업로드를 눌러 주세요.', 6000); return { ok: false, reason: 'channel' }; }
+    if (pending) return { ok: false, reason: 'busy' };
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const result = new Promise((resolve) => { pending = { id, files: list, ts: Date.now(), claimed: false, resolve }; });
-    btn.click();                  // drop 이벤트 처리 중(await 전)에 눌러야 팝업 차단에 걸리지 않음
+    btn.click();                  // drop/click 이벤트 처리 중(await 전)에 눌러야 팝업 차단에 걸리지 않음
     post({ type: 'offer', id });  // 이미 열려 있던 팝업이면 이 신호를 받고 준비됐다고 알려 옴
     toast('첨부 창에 파일을 넘기는 중…', 20000);
     const timeout = new Promise((r) => setTimeout(() => r({ type: 'timeout' }), 20000));
     const res = await Promise.race([result, timeout]);
+    if (pending && pending.id === id) pending = null;
     const skipped = res.skipped && res.skipped.length ? `\n제외: ${skippedText(res.skipped)}` : '';
-    if (res.type === 'done') toast(`${res.n}개 파일을 첨부 창에서 올렸습니다.` + skipped, skipped ? 8000 : 3500);
-    else if (res.type === 'fail') toast(failText(res), 8000);
-    else { if (pending && pending.id === id) pending = null; toast('첨부 창이 응답하지 않습니다. 그 창에 파일을 끌어다 놓고 업로드를 눌러 주세요.', 6000); }
+    if (res.type === 'done') { toast(`${res.n}개 파일을 첨부 창에서 올렸습니다.` + skipped, skipped ? 8000 : 3500); return { ok: true, n: res.n, reason: '' }; }
+    if (res.type === 'fail') { toast(failText(res), 8000); return { ok: false, reason: res.reason || 'fail' }; }
+    if (res.type === 'blocked') {   // MAIN 훅(rnd-hook.js)이 window.open 이 null 을 돌려받았다고 알림
+      toast('브라우저가 첨부 창(팝업)을 막았습니다. 주소창 오른쪽의 팝업 차단 표시에서 이 사이트를 허용하거나, "첨부" 버튼을 직접 눌러 주세요.', 8000);
+      return { ok: false, reason: 'blocked' };
+    }
+    toast('첨부 창이 응답하지 않습니다. 그 창에 파일을 끌어다 놓고 업로드를 눌러 주세요.', 6000);
+    return { ok: false, reason: 'timeout' };
   }
 
   /* ---------- 첨부 팝업(파일등록) 자동 처리 ----------
@@ -624,6 +652,304 @@
     docDropHandlers = { onDragover, onDrop };
   }
 
+  /* ---------- 청구 준비 (eClass 패널 lib/prep.js → 백그라운드 storage.local.claimPrep + IndexedDB, lib/prep-store.js) ----------
+   * 이 프레임의 주소에 krext_appr(승인번호)·krext_card(카드 뒤 4자리)가 있으면(패널의 거래 행 클릭이나 "청구서 작성"으로 연 청구서) 백그라운드에서 그 거래의 준비 항목(청구종류·청구내역·파일)을 받아 두고,
+   * MAIN 훅(rnd-hook.js)이 그 승인번호 행을 자동 선택했다는 신호(krext-row-selected 이벤트 또는 <html data-krext-row-selected>)가 오면 청구내역 폼에서
+   *  1) 세목 빠른 선택(pick → watchClaimType 이 청구종류 코드까지)을 고르고
+   *  2) 청구내역(적요) 글이 있으면 폼의 청구내역 칸(#REQ_PTCL, 없으면 "청구내역"·"적요" 라벨 행의 입력란 — 화면이 필수로 요구)에 넣고(화면 규칙대로 1000바이트에서 자름. "내역 추가" 직전에 되돌려졌는지 한 번 더 확인)
+   *  3) 파일을 파일등록 팝업의 업로드 서비스(rcomm_0089_01_c001.jct, multipart)에 직접 올린 뒤 화면 콜백 ctl.doUploadAttfile(행) 을 MAIN 훅(krext-call)으로 불러 첨부 목록(#fileList)에 넣는다
+   *     (팝업을 열지 않으므로 팝업 차단·백그라운드 탭과 무관). 안 되면 첨부 창(팝업) 경로(dropFiles)로, 그것도 안 되면 안내 막대의 버튼으로 사용자가 다시 시도
+   *  4) krext_auto=add(백그라운드 탭)이면 "내역 추가"(#btn_listAdd)를 눌러 청구내역을 저장하고 결과(rexpe_0083_01_c001 응답 / alert 문구)를 백그라운드(prepRunResult)에 보고한다. 결재요청은 하지 않는다.
+   * 자동 처리 동안은 MAIN 훅이 confirm 을 자동 확인하고 alert 를 막지 않고 문구만 넘긴다(krext-auto-mode). 안내 막대(.krext-prep-bar)는 청구내역 폼(예산 행이 든 표) 바로 위 */
+  let prep = null;            // 준비 항목 메타 { key, appr, card4, type, ptcl(청구내역 글), files:[{id,name,size}], attached }
+  let prepFiles = [];         // File 객체 (백그라운드 base64 → File)
+  let prepBar = null;
+  let prepSt = { type: '', typeErr: false, ptcl: '', ptclErr: false, files: '', filesErr: false, add: '', addErr: false };
+  let prepAuto = '';          // 주소의 krext_auto (add = 내역 추가까지)
+  let prepRunning = false, prepTypeDone = false, prepPtclDone = false, prepAttachDone = false, prepReported = false;
+  let prepAlerts = [];        // 자동 처리 중 화면이 띄우려던 alert 문구
+  let addWaiter = null, alertTimer = null;   // "내역 추가" 결과 대기
+  let callSeq = 0;
+  const callWaiters = new Map();
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const clock = (ts) => { const d = new Date(ts); const p = (n) => String(n).padStart(2, '0'); return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  const prepQuery = () => {
+    try { const sp = new URLSearchParams(location.search); return { appr: (sp.get('krext_appr') || '').trim(), card4: (sp.get('krext_card') || '').replace(/\D/g, '').slice(-4), auto: (sp.get('krext_auto') || '').trim() }; }
+    catch (e) { return { appr: '', card4: '', auto: '' }; }
+  };
+  const b64ToFile = (f) => {
+    const bin = atob(String(f.b64 || '').replace(/\s+/g, ''));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new File([bytes], f.name, { type: f.mime || 'application/octet-stream', lastModified: Date.now() });
+  };
+  const bgSend = (msg) => { try { return chrome.runtime.sendMessage(msg).catch(() => null); } catch (e) { return Promise.resolve(null); } };
+  const autoMode = (ms) => { try { document.dispatchEvent(new CustomEvent('krext-auto-mode', { detail: String(ms || 0) })); } catch (e) {} };
+  function setSt(k, msg, err) { prepSt[k] = msg || ''; prepSt[k + 'Err'] = !!err; renderPrepBar(); }
+
+  async function loadPrep() {
+    const q = prepQuery();
+    if (!q.appr) return;
+    prepAuto = q.auto;
+    if (!cfg || !cfg.enabled) { if (prepAuto) reportRun(false, '설정의 청구서(카드) 입력 도우미가 꺼져 있어 자동 작성을 할 수 없습니다'); return; }
+    const r = await bgSend({ type: 'prepGet', appr: q.appr, card4: q.card4, withFiles: true });
+    if (stopped) return;
+    if (!r || !r.entry || (!r.entry.type && !r.entry.ptcl && !(r.entry.files || []).length)) {
+      if (prepAuto) reportRun(false, '패널에 준비된 항목(청구종류·청구내역·파일)이 없습니다');
+      return;
+    }
+    prep = r.entry;
+    prepFiles = (r.files || []).filter((f) => f && f.b64).map((f) => { try { return b64ToFile(f); } catch (e) { return null; } }).filter(Boolean);
+    const missing = (r.files || []).filter((f) => f && !f.b64).map((f) => f.name);
+    if (missing.length) setSt('files', `내용이 없는 파일 제외: ${missing.join(', ')}`, true);
+    log('청구 준비', prep.key, prep.type || '(청구종류 없음)', prep.ptcl ? '청구내역 있음' : '(청구내역 없음)', prepFiles.length, '개 파일, 자동:', prepAuto || '없음');
+    if (document.documentElement.dataset.krextRowSelected === q.appr) runPrep();   // 훅이 이미 행을 골랐음
+    else if (prepAuto) setTimeout(() => {   // 자동 처리인데 60초 안에 행 선택 신호가 없으면(이미 청구된 거래 등) 실패로 보고
+      if (!stopped && prep && !prepRunning && !prepReported && document.documentElement.dataset.krextRowSelected !== q.appr) reportRun(false, '청구서 화면에서 이 승인번호의 미청구 행을 찾지 못했습니다 (이미 청구됐거나 목록에 없음)');
+    }, 60000);
+    scheduleScan();
+  }
+  function reportRun(ok, msg) {
+    if (!prepAuto || prepReported) return;
+    prepReported = true;
+    const last = document.documentElement.dataset.krextAlert || '';
+    if (!ok && !prepAlerts.length && last) prepAlerts.push(last);
+    log('자동 처리 결과', ok, msg, prepAlerts);
+    bgSend({ type: 'prepRunResult', key: prep ? prep.key : '', appr: prepQuery().appr, ok: !!ok, msg: String(msg || ''), alerts: prepAlerts.slice(0, 5) });
+  }
+  function mkBtn(text, fn) { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); fn(); }); return b; }
+  function ensurePrepBar(f) {
+    if (!prep) return;
+    if (!prepBar) { prepBar = document.createElement('div'); prepBar.className = 'krext-prep-bar'; renderPrepBar(); }
+    const anchor = f.bgtRow.closest('table') || f.bgtRow;
+    if (!prepBar.isConnected || prepBar.nextElementSibling !== anchor) { ensureStyle(); anchor.insertAdjacentElement('beforebegin', prepBar); }
+  }
+  function renderPrepBar() {
+    if (!prepBar || !prep) return;
+    const st = (k) => prepSt[k] ? `<span class="krext-prep-st${prepSt[k + 'Err'] ? ' krext-err' : ''}">${esc(prepSt[k])}</span>` : '';
+    const names = (prep.files || []).map((x) => x.name).join(', ');
+    let html = `<span class="krext-prep-ttl">eClass 패널에서 준비한 항목</span><span class="krext-prep-dim">승인번호 ${esc(prep.appr)}${prepAuto ? ' · 자동 작성' : ''}</span>`;
+    if (prep.type) html += `<span>청구종류 <b>${esc(prep.type)}</b> ${st('type')}</span>`;
+    if (prep.ptcl) html += `<span>청구내역 <b title="${esc(prep.ptcl)}">${esc(prep.ptcl.length > 30 ? prep.ptcl.slice(0, 30) + '…' : prep.ptcl)}</b> ${st('ptcl')}</span>`;
+    if ((prep.files || []).length) html += `<span>첨부 <b>${prepFiles.length}개</b> <span class="krext-prep-dim">${esc(names)}</span> ${st('files')}</span>`;
+    if (prepAuto || prepSt.add) html += `<span>내역 추가 ${st('add')}</span>`;
+    prepBar.innerHTML = html;
+    const btns = document.createElement('span');
+    btns.className = 'krext-prep-btns';
+    if (prep.type) { const b = mkBtn('청구종류 적용', () => applyPrepType()); b.disabled = prepRunning; btns.appendChild(b); }
+    if (prep.ptcl) { const b = mkBtn('청구내역 적용', () => applyPrepPtcl()); b.disabled = prepRunning; btns.appendChild(b); }
+    if (prepFiles.length && cfg && cfg.dragDrop) { const b = mkBtn(prepAttachDone ? '파일 다시 첨부' : '파일 첨부', () => attachPrep(true)); b.disabled = prepRunning; btns.appendChild(b); }
+    btns.appendChild(mkBtn('준비 항목 지우기', clearPrep));
+    prepBar.appendChild(btns);
+  }
+  async function clearPrep() {
+    if (!prep) return;
+    if (!confirm('패널에서 준비한 청구종류·청구내역·파일을 지울까요? (이 거래의 준비 항목만)')) return;
+    await bgSend({ type: 'prepClear', key: prep.key });
+    prep = null; prepFiles = [];
+    if (prepBar) { prepBar.remove(); prepBar = null; }
+    toast('준비 항목을 지웠습니다.', 2500);
+  }
+  async function waitForm(ms) {
+    const st = Date.now();
+    while (!stopped && Date.now() - st < ms) {
+      const f = (current && current.sel1 && current.sel1.isConnected) ? current : (current = findForm());
+      if (f) return f;
+      await sleep(300);
+    }
+    return null;
+  }
+  /* 행 선택 뒤: 청구종류 → 파일 → (자동이면) 내역 추가 */
+  async function runPrep() {
+    if (!prep || prepRunning || stopped) return;
+    prepRunning = true; renderPrepBar();
+    if (prepAuto) autoMode(180000);
+    try {
+      const f = await waitForm(20000);
+      if (!f) { setSt('type', '청구내역 폼을 찾지 못했습니다', true); if (prepAuto) reportRun(false, '청구내역 폼을 찾지 못했습니다'); return; }
+      await sleep(800);   // 행 선택 뒤 화면이 폼을 채우고 기본값(비목·RCMS)이 들어갈 시간
+      if (prep.type && !prepTypeDone) {
+        const ok = await applyPrepType();
+        if (!ok && prepAuto) { reportRun(false, `청구종류 "${prep.type}" 을 세목 목록에서 찾지 못했습니다`); return; }
+        const st = Date.now();   // 세목 변경 → 청구종류 라디오 선택(watchClaimType, tick 700ms)이 끝날 때까지
+        await sleep(1200);
+        while (typeApplying && !stopped && Date.now() - st < 8000) await sleep(250);
+      }
+      if (prep.ptcl && !prepPtclDone) await applyPrepPtcl();   // 칸을 못 찾아도 계속 — 그러면 화면 검증 alert("청구내역이 입력되지 않았습니다.")가 실패 사유로 보고된다
+      if (prepFiles.length && !prepAttachDone && cfg.dragDrop) {
+        if (prep.attached && !prepAuto) setSt('files', `${clock(prep.attached.ts)} 에 이미 첨부한 파일 — 다시 올리려면 "파일 다시 첨부"`);
+        else {
+          await sleep(400);
+          const ok = await attachPrep(false);
+          if (!ok && prepAuto) { reportRun(false, `첨부 실패: ${prepSt.files}`); return; }
+        }
+      }
+      if (prepAuto === 'add') { await sleep(1000); if (prep.ptcl) await applyPrepPtcl(true); await addLine(); }   // 첨부·세목 처리 중 화면이 적요를 되돌렸으면 다시 넣고 저장
+    } catch (e) { log('runPrep 오류', e); if (prepAuto) reportRun(false, String((e && e.message) || e)); }
+    finally { prepRunning = false; if (prepAuto) autoMode(0); renderPrepBar(); }
+  }
+  async function applyPrepType() {
+    const want = norm(prep.type);
+    const item = cfg.picks.find((p) => p.label === prep.type) || cfg.picks.find((p) => norm(p.label) === want) || { label: prep.type, kw: prep.type, type: '' };
+    setSt('type', '적용 중…');
+    while (picking && !stopped) await sleep(200);
+    const ok = await pick(item, null);
+    prepTypeDone = !!ok;
+    setSt('type', ok ? '적용됨' : '세목 목록에서 찾지 못함', !ok);
+    return !!ok;
+  }
+  /* 청구내역(적요) 칸: #REQ_PTCL(청구서 폼의 고정 ID, textarea 또는 글 입력) → 없으면 "청구내역"/"적요" 라벨 행의 입력란 */
+  function findPtclField() {
+    const byId = document.getElementById('REQ_PTCL');
+    if (byId && byId.matches('textarea,input') && visible(byId)) return byId;
+    const leaves = collectLeaves();
+    for (const lab of ['청구내역', '적요']) {
+      for (const el of leaves.get(norm(lab)) || []) {
+        const r = rowFor(el, false); if (!r) continue;
+        const f = Array.from(r.box.querySelectorAll('textarea,input[type=text],input:not([type])')).find((x) => !el.contains(x) && visible(x) && !x.readOnly && !x.disabled);
+        if (f) return f;
+      }
+    }
+    return null;
+  }
+  /* 화면(fnGetDataCutByByteLength)처럼 한글 2바이트 기준 1000바이트에서 자름 */
+  const cutBytes = (s, max) => { let n = 0, out = ''; for (const ch of String(s || '')) { n += ch.charCodeAt(0) > 127 ? 2 : 1; if (n > max) break; out += ch; } return out; };
+  /* 패널에 적은 청구내역을 폼에 넣는다 (화면 기본값이 있어도 덮어씀 — 이 거래에 대한 명시적 입력이므로).
+   * recheck=true 는 "내역 추가" 직전 확인: 화면이 값을 되돌렸을 때만 다시 넣고 상태 문구는 바꾸지 않음 */
+  async function applyPrepPtcl(recheck) {
+    const want = cutBytes(prep.ptcl, 1000);
+    const field = findPtclField();
+    if (!field) { if (!recheck) setSt('ptcl', '청구내역 칸을 찾지 못했습니다 — 화면에서 직접 적으세요', true); return false; }
+    if (field.value !== want) {
+      field.value = want;
+      for (const t of ['input', 'keyup', 'change']) field.dispatchEvent(new Event(t, { bubbles: true }));
+      log(recheck ? '청구내역 다시 넣음 (화면이 되돌림)' : '청구내역', want.length, '자 →', field.id || field.name || field.tagName);
+    }
+    prepPtclDone = true;
+    if (!recheck) setSt('ptcl', want.length < String(prep.ptcl || '').length ? '적용됨 (1000바이트에서 잘림)' : '적용됨');
+    return true;
+  }
+  /* MAIN world 훅(rnd-hook.js callBridge)을 통해 화면 함수 호출 → { ok, error } */
+  function pageCall(fn, args) {
+    return new Promise((resolve) => {
+      const id = 'c' + (++callSeq) + '_' + Date.now().toString(36);
+      const timer = setTimeout(() => { callWaiters.delete(id); resolve({ ok: false, error: '응답 없음 (훅 미동작)' }); }, 5000);
+      callWaiters.set(id, (r) => { clearTimeout(timer); resolve(r); });
+      try { document.dispatchEvent(new CustomEvent('krext-call', { detail: JSON.stringify({ id, fn, args: args || [] }) })); }
+      catch (e) { clearTimeout(timer); callWaiters.delete(id); resolve({ ok: false, error: String((e && e.message) || e) }); }
+    });
+  }
+  const fileListCount = () => document.querySelectorAll('#fileList option').length;
+  /* 파일등록 팝업(rcomm_0089_01.js btn_upload)과 같은 요청을 이 프레임에서 직접: multipart ATTFILE + USEFAC_SEQ_NO + OPER + REPLACE_FILE_NM → rcomm_0089_01_c001.jct
+   * 응답 REC[](ATTFILE_SEQ_NO, SKEY, FILE_NM …) 을 화면 콜백 ctl.doUploadAttfile(행) 에 하나씩 넘긴다 (팝업의 fn_fileArrayPopOption 과 같고 POP_KEY 등은 청구서가 빈 값으로 넘김).
+   * 화면이 파일을 거부하면(RCMS 과제의 zip·exe 등) 그 파일은 목록에 안 들어가므로 #fileList 의 option 수로 실제 첨부 수를 센다 */
+  async function uploadDirect(files) {
+    const skipped = files.filter(alwaysDenied).map((f) => f.name);
+    const list = files.filter((f) => !alwaysDenied(f));
+    if (!list.length) return { ok: false, reason: '올릴 수 있는 파일 없음', skipped };
+    if (!document.getElementById('fileList')) return { ok: false, reason: '첨부 목록(#fileList)이 없는 화면', skipped };
+    const fd = new FormData();
+    for (const f of list) fd.append('ATTFILE', f, f.name);
+    fd.append('USEFAC_SEQ_NO', hidVal('USEFAC_SEQ_NO') || cfg.usefacSeqNo || '10');
+    fd.append('OPER', '');
+    fd.append('REPLACE_FILE_NM', '');
+    let data = null;
+    try {
+      const res = await fetch('/rcomm_0089_01_c001.jct', { method: 'POST', body: fd, credentials: 'include', headers: { 'X-Requested-With': 'XMLHttpRequest' } });   // 팝업의 $.ajax 와 같은 요청
+      if (!res.ok) return { ok: false, reason: `업로드 HTTP ${res.status}`, skipped };
+      const buf = await res.arrayBuffer();
+      const cs = /charset=([\w-]+)/i.exec(res.headers.get('content-type') || '');
+      let text = '';
+      try { text = new TextDecoder(cs ? cs[1] : 'euc-kr').decode(buf); } catch (e) { text = new TextDecoder('utf-8').decode(buf); }
+      data = JSON.parse(text);
+    } catch (e) { return { ok: false, reason: `업로드 요청 실패: ${(e && e.message) || e}`, skipped }; }
+    const head = data && data.COMMON_HEAD;
+    if (!data || (head && (head.ERROR === true || head.ERROR === 'true'))) return { ok: false, reason: `업로드 오류: ${(head && (head.MESSAGE || head.CODE)) || '응답 없음'}`, skipped };
+    const rec = Array.isArray(data.REC) ? data.REC : [];
+    if (!rec.length) return { ok: false, reason: '업로드 응답에 파일이 없음', skipped };
+    const before = fileListCount();
+    for (const row of rec) { const r = await pageCall('ctl.doUploadAttfile', [row]); if (!r.ok) log('doUploadAttfile 실패', r.error); }
+    await sleep(150);
+    const n = fileListCount() - before;
+    log('직접 업로드', rec.length, '건 응답, 목록에', n, '건 추가');
+    if (n <= 0) return { ok: false, reason: '화면 첨부 목록에 넣지 못함 (ctl.doUploadAttfile)', skipped };
+    for (const row of rec.slice(n)) skipped.push(String(row.FILE_NM || ''));   // 화면이 거부한 파일(순서상 뒤쪽으로 추정)
+    return { ok: true, n, skipped: skipped.filter(Boolean) };
+  }
+  async function attachPrep(manual) {
+    const f = (current && current.sel1 && current.sel1.isConnected) ? current : (current = findForm());
+    if (!f) { setSt('files', '청구내역 폼을 찾지 못했습니다', true); return false; }
+    setSt('files', '올리는 중…');
+    // 1) 팝업 없이 업로드 서비스에 직접 올리고 화면 콜백으로 첨부 목록에 넣기
+    const direct = await uploadDirect(prepFiles);
+    if (direct.ok) {
+      prepAttachDone = true;
+      setSt('files', `${direct.n}개 첨부됨${direct.skipped.length ? ` (제외: ${direct.skipped.join(', ')})` : ''}`);
+      bgSend({ type: 'prepAttached', key: prep.key, n: direct.n });
+      return true;
+    }
+    log('직접 업로드 실패 →', direct.reason);
+    if (!f.attach || !cfg.dragDrop) { setSt('files', `첨부 실패: ${direct.reason}`, true); return false; }
+    // 2) 첨부 창(팝업) 경로: 사용자 클릭이면 팝업이 열리고, 자동이면 팝업 차단에 걸릴 수 있음
+    setSt('files', manual ? '첨부 창에 넘기는 중…' : '첨부 창을 여는 중…');
+    const res = await dropFiles(f.attach, prepFiles);
+    if (res.ok) { prepAttachDone = true; setSt('files', `${res.n}개 올림`); bgSend({ type: 'prepAttached', key: prep.key, n: res.n }); return true; }
+    if (res.reason === 'blocked') setSt('files', `직접 업로드 실패(${direct.reason}), 첨부 창은 브라우저가 막음 — "파일 첨부" 버튼을 누르세요`, true);
+    else setSt('files', `첨부 실패(${direct.reason} / ${res.reason}) — "파일 첨부" 버튼으로 다시 시도`, true);
+    return false;
+  }
+  /* "내역 추가"(#btn_listAdd) 를 눌러 청구내역 저장. 결과는 rexpe_0083_01_c001 응답(MAIN 훅의 .jct 캡처 postMessage) 또는 alert 문구(검증 실패)로 판단 */
+  async function addLine() {
+    setSt('add', '누르는 중…');
+    const btn = document.getElementById('btn_listAdd') || findButton(['내역추가', '청구내역추가']);
+    if (!btn) { setSt('add', '"내역 추가" 버튼을 찾지 못했습니다', true); reportRun(false, '"내역 추가" 버튼을 찾지 못했습니다'); return; }
+    prepAlerts = [];
+    const result = new Promise((resolve) => { addWaiter = resolve; });
+    btn.click();
+    const timeout = new Promise((r) => setTimeout(() => r({ type: 'timeout' }), 60000));
+    const res = await Promise.race([result, timeout]);
+    addWaiter = null; clearTimeout(alertTimer);
+    if (res.type === 'saved') { setSt('add', `저장됨${res.reqNo ? ` (청구번호 ${res.reqNo})` : ''}`); reportRun(true, `청구내역 추가됨${res.reqNo ? ` · 청구번호 ${res.reqNo}` : ''}${prepAlerts.length ? ' · ' + prepAlerts.join(' / ') : ''}`); }
+    else if (res.type === 'error' || res.type === 'alert') { setSt('add', res.msg, true); reportRun(false, res.msg); }
+    else { setSt('add', '결과를 확인하지 못했습니다 — 탭에서 확인하세요', true); reportRun(false, '"내역 추가" 결과를 확인하지 못했습니다 (탭에서 확인)'); }
+  }
+  const onRowSelected = () => { if (prep && !prepRunning) runPrep(); };
+  const onPopupBlocked = () => { if (pending) { const p = pending; pending = null; p.resolve({ type: 'blocked' }); } };
+  const onCallResult = (ev) => { let r = null; try { r = JSON.parse(String((ev && ev.detail) || '')); } catch (e) { return; } const w = r && callWaiters.get(r.id); if (w) { callWaiters.delete(r.id); w(r); } };
+  const onAlert = (ev) => {   // 자동 처리 중 화면의 alert: 검증 실패 문구. 2.5초 안에 저장 응답이 오지 않으면 그 문구를 실패 사유로
+    const msg = String((ev && ev.detail) || '').trim(); if (!msg) return;
+    prepAlerts.push(msg); log('alert', msg);
+    if (addWaiter) { clearTimeout(alertTimer); alertTimer = setTimeout(() => { if (addWaiter) { const w = addWaiter; addWaiter = null; w({ type: 'alert', msg }); } }, 2500); }
+  };
+  const onJctMessage = (ev) => {   // MAIN 훅이 캡처한 .jct 호출 (rnd-bridge 와 같은 postMessage)
+    if (ev.source !== window || !ev.data || ev.data.__krext !== 'jct' || !addWaiter) return;
+    const e = ev.data.entry; if (!e || e.service !== 'rexpe_0083_01_c001') return;
+    const text = String(e.response || '');
+    let data = null; try { data = JSON.parse(text); } catch (x) {}
+    const head = data && data.COMMON_HEAD;
+    const isErr = head ? (head.ERROR === true || head.ERROR === 'true') : /"ERROR"\s*:\s*(true|"true")/.test(text);
+    const msgM = /"MESSAGE"\s*:\s*"([^"]*)"/.exec(text);
+    const reqM = /"REQ_SEQ_NO"\s*:\s*"([^"]*)"/.exec(text);
+    const w = addWaiter; addWaiter = null; clearTimeout(alertTimer);
+    if (e.status && e.status !== 200) w({ type: 'error', msg: `저장 요청 HTTP ${e.status}` });
+    else if (isErr) w({ type: 'error', msg: `저장 오류: ${(head && (head.MESSAGE || head.CODE)) || (msgM && msgM[1]) || '알 수 없음'}` });
+    else w({ type: 'saved', reqNo: (data && data.REQ_SEQ_NO) || (reqM && reqM[1]) || '' });
+  };
+  function bindPrepEvents() {
+    document.addEventListener('krext-row-selected', onRowSelected);
+    document.addEventListener('krext-popup-blocked', onPopupBlocked);
+    document.addEventListener('krext-call-result', onCallResult);
+    document.addEventListener('krext-alert', onAlert);
+    window.addEventListener('message', onJctMessage);
+  }
+  function unbindPrepEvents() {
+    document.removeEventListener('krext-row-selected', onRowSelected);
+    document.removeEventListener('krext-popup-blocked', onPopupBlocked);
+    document.removeEventListener('krext-call-result', onCallResult);
+    document.removeEventListener('krext-alert', onAlert);
+    window.removeEventListener('message', onJctMessage);
+  }
+
   /* ---------- 감시 / 주기 처리 ---------- */
   function scan() {
     if (stopped || !cfg || !cfg.enabled || !document.body) return;
@@ -639,6 +965,7 @@
     if (cfg.defaultBudget) fillDefault(f.sel1, cfg.defaultBudget);
     if (cfg.defaultRcms) fillDefault(f.rcms, cfg.defaultRcms);
     watchClaimType(f);
+    if (prep) ensurePrepBar(f);
   }
   function tick() {
     if (stopped || !cfg || !cfg.enabled) { stopTick(); return; }
@@ -659,6 +986,8 @@
     if (observer) { observer.disconnect(); observer = null; }
     if (docDropHandlers) { document.removeEventListener('dragover', docDropHandlers.onDragover); document.removeEventListener('drop', docDropHandlers.onDrop); docDropHandlers = null; }
     if (channel) { try { channel.close(); } catch (e) {} channel = null; }
+    unbindPrepEvents();
+    prepBar = null;
     teardownUi();
     for (const el of document.querySelectorAll('[data-krext-drop]')) delete el.dataset.krextDrop;   // 새 스크립트가 다시 묶을 수 있게 (이 스크립트의 리스너는 stopped 라 동작 안 함)
     const st = document.getElementById('krext-claim-style'); if (st) st.remove();
@@ -668,7 +997,11 @@
     if (stopped) return;
     observer = new MutationObserver(() => { if (cfg && cfg.enabled) scheduleScan(); });
     if (document.body) observer.observe(document.body, { childList: true, subtree: true });
-    loadCfg().then(() => { if (cfg && cfg.enabled && cfg.dragDrop) { initChannel(); announceUploadUi(); } });
+    bindPrepEvents();
+    loadCfg().then(() => {
+      if (cfg && cfg.enabled && cfg.dragDrop) { initChannel(); announceUploadUi(); }
+      loadPrep();   // 도우미가 꺼져 있으면 자동 작성 요청에만 실패를 보고
+    });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();

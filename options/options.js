@@ -101,7 +101,7 @@
   }
   $('btnPrjRefresh').addEventListener('click', async () => {
     setStatus('prjStatus', 'R&D ERP에서 불러오는 중…');
-    const res = await chrome.runtime.sendMessage({ type: 'getData', force: true });
+    const res = await chrome.runtime.sendMessage({ type: 'getData', force: true, full: true });   // 참여인력 캐시(2시간)도 건너뛰어 참여 과제 목록을 다시 판정
     await loadProjects(); await loadIssued();
     if (res && res.error) setStatus('prjStatus', '오류: ' + res.error, true);
     else if (res && res.loginRequired) setStatus('prjStatus', 'R&D ERP 로그인이 필요합니다. eClass의 R&D ERP 메뉴를 클릭해서 로그인한 뒤 다시 누르세요.', true);
@@ -520,6 +520,22 @@
     $('chBox').style.pointerEvents = on ? '' : 'none';
   }
   $('chEnabled').addEventListener('change', toggleClaimBox);
+  /* 청구 준비(패널에서 고른 청구종류·첨부 파일, storage.local.claimPrep + 확장 IndexedDB) 저장 현황 · 모두 지우기 */
+  async function loadPrepStats() {
+    try {
+      const st = await chrome.runtime.sendMessage({ type: 'prepStats' });
+      const mb = st && st.bytes ? (st.bytes / 1048576).toFixed(1) : '0';
+      $('prepStats').textContent = st && st.entries ? `저장된 청구 준비 ${st.entries}건 · 파일 ${st.files}개 (${mb}MB)` : '저장된 청구 준비 없음';
+    } catch (e) { $('prepStats').textContent = ''; }
+  }
+  $('btnPrepClear').addEventListener('click', async () => {
+    if (!confirm('패널에서 준비한 청구종류·첨부 파일을 모두 지울까요? (R&D ERP 에는 영향 없음)')) return;
+    try { await chrome.runtime.sendMessage({ type: 'prepClearAll' }); setStatus('prepStatus', '지웠습니다'); }
+    catch (e) { setStatus('prepStatus', '실패: ' + String((e && e.message) || e), true); }
+    loadPrepStats();
+  });
+  loadPrepStats();
+  try { chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch.claimPrep) loadPrepStats(); }); } catch (e) {}
 
   $('form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -594,10 +610,13 @@
   /* ---------- 진단 ---------- */
   let diagResult = null;
   $('btnDiag').addEventListener('click', async () => {
-    const prjNo = $('diagPrjNo').value.trim() || $('diagPrj').value;
+    const prjNo = $('diagPrjNo').value.trim() || $('diagPrj').value;   // 과제번호 또는 과제명 일부 (rnd-api diagnose 가 찾음)
     setStatus('diagStatus', '호출 중…');
     const res = await chrome.runtime.sendMessage({ type: 'diagnose', prjNo });
     diagResult = res;
+    const why = $('diagWhy');   // 보이지 않는(보이는) 이유 요약 — 원본 JSON 위에
+    why.innerHTML = ((res && res.why) || []).map((w) => `<li>${F.esc(w)}</li>`).join('');
+    why.hidden = !why.innerHTML;
     const out = $('diagOut'); out.hidden = false;
     out.textContent = JSON.stringify(res, null, 2);
     setStatus('diagStatus', res && res.error ? '오류: ' + res.error : '완료. 아래 결과를 확인하세요.', !!(res && res.error));
