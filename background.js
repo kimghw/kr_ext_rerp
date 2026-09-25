@@ -81,7 +81,7 @@ async function refresh(force, opts) {
         });
       }
       updateBadge(data);
-      // 청구 준비(패널에서 고른 청구종류·첨부 파일): 미청구 목록에서 사라진 거래의 항목은 7일 뒤 정리 (lib/prep-store.js)
+      // 청구 준비(패널에서 고른 청구종류·첨부 파일): 미청구 목록에서 사라진 거래의 항목은 7일 뒤, 신청까지 끝난 항목은 하루 뒤 정리 (lib/prep-store.js)
       if (!data.loginRequired && !data.error && data.memberFilter !== 'no-id') { try { await KRX_PREP_STORE.cleanup(prepKeysOf(data)); } catch (e) {} }
       return data;
     }
@@ -98,41 +98,78 @@ function prepKeysOf(data) {
   return keys;
 }
 
-/* 청구 준비 "청구서 작성": R&D ERP 청구서(카드) 화면을 비활성 탭으로 열어(레이아웃 딥링크 #krext, rnd-hook.js) 그 거래 행을 자동 선택하고,
- * content/rnd-claim.js 가 세목·청구종류를 고르고 청구내역(적요)을 적고 파일을 올린 뒤 "내역 추가"를 눌러 결과를 prepRunResult 로 보고한다 (결재요청은 하지 않음).
- * 성공하면 탭을 닫고 미청구 목록을 다시 조회(거래가 사라짐), 실패하면 탭을 남겨 두어 패널의 "탭 보기"로 이어서 할 수 있게 한다.
- * 제한 시간(4분) 안에 보고가 없으면 실패로 표시 */
+/* 청구 준비 "청구서 작성" / "작성+신청" / "신청": R&D ERP 청구서(카드) 화면을 비활성 탭으로 열어(레이아웃 딥링크 #krext, rnd-hook.js) 그 거래 행을 자동 선택하고,
+ * content/rnd-claim.js 가 세목·청구종류를 고르고 청구내역(적요)을 적고 파일을 올린 뒤 "내역 추가"를 누른다 (mode 'add' — 결의서에 임시저장 상태로 들어감. 여기서 끝나면 신청은 아직 안 된 것).
+ * mode 'add,apply' 면 이어서 결의서 "신청"(결재요청)까지, mode 'apply' 면(이미 내역 추가된 항목 — 미청구 목록에서 빠져 패널의 신청 대기 목록에 있음) 저장된 결의서의 신청만,
+ * mode 'delete' 면 내역 추가된 청구내역 행의 [삭제]를 눌러 임시저장을 지운다(거래가 미청구 목록으로 돌아오고 준비 항목은 작성 전 상태로).
+ * 결과는 prepRunResult 로 보고: 내역 추가 성공은 진행 보고(final=false, saved) → 신청 결과가 끝 보고. 끝까지 성공하면 탭을 닫고 미청구 목록을 다시 조회(거래가 사라짐),
+ * 실패하면 탭을 남겨 두어 패널의 "탭 보기"로 이어서 할 수 있게 한다. 제한 시간(5분) 안에 보고가 없으면 실패로 표시 */
 const RND_MAIN = 'https://rnd.krs.co.kr/rderp_layoutMain.act';
-const PREP_RUN_TIMEOUT = 4 * 60000;
-async function prepRun(key) {
+const PREP_RUN_TIMEOUT = 5 * 60000;
+const wasSaved = (run) => !!(run && (run.saved || run.state === 'done' || run.state === 'saved' || run.state === 'applied'));   // 'done' 은 이전 버전(0.6.9)의 "내역 추가됨" 상태 이름
+async function prepRun(key, mode) {
   const m = await KRX_PREP_STORE.loadMeta();
   const e = m[key];
   if (!e) return { ok: false, error: '준비 항목이 없습니다' };
-  if (!e.type) return { ok: false, error: '청구종류를 먼저 고르세요' };
-  if (e.run && e.run.state === 'running' && Date.now() - e.run.ts < PREP_RUN_TIMEOUT) return { ok: false, error: '이미 작성 중입니다' };
-  const req = { open: 'rexpe_0083_01.act', title: '청구서(카드)', menuId: 'menu_id_362', q: 'PRJ_NO=' + encodeURIComponent(e.prjNo || ''), appr: e.appr, card: e.card4, auto: 'add' };
+  const steps = new Set(String(mode || 'add').split(/[,+\s]+/).filter(Boolean));
+  if (steps.has('delete')) { steps.clear(); steps.add('delete'); }
+  if (!steps.has('add') && !steps.has('apply') && !steps.has('delete')) steps.add('add');
+  const auto = ['add', 'apply', 'delete'].filter((s) => steps.has(s)).join(',');
+  if (steps.has('add') && !e.type) return { ok: false, error: '청구종류를 먼저 고르세요' };
+  if (!steps.has('add') && !wasSaved(e.run)) return { ok: false, error: steps.has('delete') ? '내역 추가된 항목이 아닙니다' : '먼저 청구서를 작성(내역 추가)하세요' };
+  if (steps.has('delete') && e.run && e.run.state === 'applied') return { ok: false, error: '이미 신청된 결의서는 삭제할 수 없습니다 (R&D ERP 에서 신청 취소 후)' };
+  if (e.run && e.run.state === 'running' && Date.now() - e.run.ts < PREP_RUN_TIMEOUT) return { ok: false, error: '이미 진행 중입니다' };
+  if (e.run && e.run.tabId != null) { try { await chrome.tabs.remove(e.run.tabId); } catch (x) {} }   // 지난 실행이 남겨 둔 탭
+  const req = { open: 'rexpe_0083_01.act', title: '청구서(카드)', menuId: 'menu_id_362', q: 'PRJ_NO=' + encodeURIComponent(e.prjNo || ''), card: e.card4, auto };
+  if (steps.has('add')) req.appr = e.appr;
+  else {
+    /* 신청만·삭제: 미청구 행 자동 선택 없이(이미 청구된 거래) 준비 항목만 찾게 krext_prep. 저장된 결의서는 과제정보 › 청구결의서 탭(rtask_0008_t04_01.js)처럼 주소에
+     * REQ_CNT(결의서 차수)·APPR_DIV_CD(40 임시저장)를 붙여야 열린다 — 화면(rexpe_0083_01)은 서버가 주소 파라미터로 렌더한 reqParam/hidden REQ_CNT 로 청구내역 목록(rexpe_0001_01_r018)을 읽고,
+     * PRJ_NO 만 주면 새 결의서 폼(REQ_CNT 빈값, 목록 0건)이 열려 청구번호 행을 못 찾는다 (2026-09-25 CDP 확인). 회의비 관련 CFRC_* 파라미터는 없어도 같은 목록이 뜬다 */
+    req.prep = e.appr;
+    const reqCnt = String((e.run && e.run.reqCnt) || '').trim();
+    if (!reqCnt) return { ok: false, error: '결의서 차수(REQ_CNT)가 기록돼 있지 않아 저장된 결의서를 열 수 없습니다 — R&D ERP 과제정보 › 청구결의서 탭에서 직접 처리하세요' };
+    req.q += '&REQ_CNT=' + encodeURIComponent(reqCnt) + '&APPR_DIV_CD=40';
+  }
   let tab = null;
   try { tab = await chrome.tabs.create({ url: RND_MAIN + '#krext=' + encodeURIComponent(JSON.stringify(req)), active: false }); }
   catch (x) { return { ok: false, error: '탭을 열지 못했습니다: ' + String((x && x.message) || x) }; }
-  await KRX_PREP_STORE.setRun(key, { state: 'running', ts: Date.now(), tabId: tab.id, msg: '' });
+  const prev = e.run || {};
+  await KRX_PREP_STORE.setRun(key, { state: 'running', stage: steps.has('add') ? 'add' : steps.has('delete') ? 'delete' : 'apply', mode: auto, ts: Date.now(), tabId: tab.id, msg: '', saved: wasSaved(prev), reqNo: String(prev.reqNo || ''), reqCnt: String(prev.reqCnt || '') });
   setTimeout(async () => {
     try {
       const cur = (await KRX_PREP_STORE.loadMeta())[key];
-      if (cur && cur.run && cur.run.state === 'running' && cur.run.tabId === tab.id) await KRX_PREP_STORE.setRun(key, { state: 'failed', ts: Date.now(), tabId: tab.id, msg: '제한 시간 안에 끝나지 않았습니다 — 탭에서 확인하세요' });
+      if (cur && cur.run && cur.run.state === 'running' && cur.run.tabId === tab.id) await KRX_PREP_STORE.setRun(key, Object.assign({}, cur.run, { state: 'failed', ts: Date.now(), msg: '제한 시간 안에 끝나지 않았습니다 — 탭에서 확인하세요' }));
     } catch (x) {}
   }, PREP_RUN_TIMEOUT);
   return { ok: true, tabId: tab.id };
 }
+/* rnd-claim.js 의 보고 { key, appr, state: saved|applied|deleted|failed, final, msg, alerts, saved, reqNo, reqCnt }. 이전 버전(0.6.9)의 { ok } 만 있는 보고도 받는다.
+ * deleted(임시저장 삭제됨): run 을 지워 준비 항목을 작성 전 상태로 돌리고 미청구 목록을 다시 조회한다(거래가 돌아옴).
+ * run = { state: running|saved|applied|failed, stage(running 일 때 add|apply), mode, ts, tabId, msg, saved(내역 추가는 됨), reqNo(청구번호), reqCnt(결의서 차수) } */
 async function prepRunResult(msg, sender) {
-  const tabId = sender && sender.tab ? sender.tab.id : null;
+  const tabId = sender && sender.tab && /rnd\.krs\.co\.kr/.test(String(sender.tab.url || '')) ? sender.tab.id : null;   // 닫을 탭은 R&D ERP 탭일 때만 (다른 곳에서 온 보고로 그 탭을 닫지 않게)
   const key = String(msg.key || '') || await KRX_PREP_STORE.keyFor(msg.appr, '');
   const alerts = Array.isArray(msg.alerts) ? msg.alerts.filter(Boolean) : [];
-  const text = String(msg.msg || '') + (!msg.ok && alerts.length && !String(msg.msg || '').includes(alerts[alerts.length - 1]) ? ` (${alerts[alerts.length - 1]})` : '');
-  if (key) await KRX_PREP_STORE.setRun(key, { state: msg.ok ? 'done' : 'failed', ts: Date.now(), tabId, msg: text });
-  if (msg.ok) {
+  const state = ['saved', 'applied', 'deleted', 'failed'].includes(msg.state) ? msg.state : (msg.ok ? 'saved' : 'failed');
+  const final = msg.final !== false;
+  if (state === 'deleted') {
+    if (key) await KRX_PREP_STORE.setRun(key, null);
     if (tabId != null) setTimeout(() => { try { chrome.tabs.remove(tabId).catch(() => {}); } catch (x) {} }, 2500);
-    chrome.storage.local.remove(CACHE_KEY).then(() => refresh(true)).catch(() => {});   // 청구된 거래는 미청구 목록에서 빠지므로 다시 조회
+    chrome.storage.local.remove(CACHE_KEY).then(() => refresh(true)).catch(() => {});
+    return { ok: true, key };
   }
+  const text = String(msg.msg || '') + (state === 'failed' && alerts.length && !String(msg.msg || '').includes(alerts[alerts.length - 1]) ? ` (${alerts[alerts.length - 1]})` : '');
+  const cur = key ? (await KRX_PREP_STORE.loadMeta())[key] : null;
+  const prev = (cur && cur.run) || {};
+  const saved = !!msg.saved || state === 'saved' || state === 'applied' || wasSaved(prev);
+  if (cur) {
+    await KRX_PREP_STORE.setRun(key, { state: final ? state : 'running', stage: final ? '' : 'apply', mode: String(prev.mode || ''), ts: Date.now(), tabId, msg: text, saved,
+      reqNo: String(msg.reqNo || prev.reqNo || ''), reqCnt: String(msg.reqCnt || prev.reqCnt || '') });
+  }
+  if (final && state !== 'failed' && tabId != null) setTimeout(() => { try { chrome.tabs.remove(tabId).catch(() => {}); } catch (x) {} }, 2500);
+  // 내역 추가된 거래는 미청구 목록에서 빠지므로 다시 조회 (신청 실패라도 임시저장은 됐음). 이미 저장된 상태에서 신청만 실패한 경우는 목록이 그대로라 건너뜀
+  if (saved && (state !== 'failed' || !wasSaved(prev))) chrome.storage.local.remove(CACHE_KEY).then(() => refresh(true)).catch(() => {});
   return { ok: true, key };
 }
 async function prepFocusTab(key) {
@@ -410,7 +447,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'prepGet': return await KRX_PREP_STORE.getEntry(msg.appr, msg.card4, !!msg.withFiles);
       case 'prepAttached': return { ok: true, entry: await KRX_PREP_STORE.markAttached(String(msg.key || ''), msg.n) };
       case 'prepStats': return await KRX_PREP_STORE.stats();
-      case 'prepRun': return await prepRun(String(msg.key || ''));              // 패널 "청구서 작성" → 백그라운드 탭
+      case 'prepRun': return await prepRun(String(msg.key || ''), String(msg.mode || 'add'));   // 패널 "청구서 작성"(add) · "작성+신청"(add,apply) · "신청"(apply) · "임시저장 삭제"(delete) → 백그라운드 탭
       case 'prepRunResult': return await prepRunResult(msg, sender);           // ERP 청구서(rnd-claim.js)의 결과 보고
       case 'prepFocusTab': return await prepFocusTab(String(msg.key || ''));   // 패널 "탭 보기"
       case 'callService': return await KRX_API.call(msg.service, msg.input || {});

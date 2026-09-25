@@ -4,7 +4,8 @@
  *  2) "청구" 소제목 옆에 세목(회의비, 연구실운영비 …) 빠른 선택 버튼을 넣고
  *  3) 첨부문서 칸(행)에 파일을 끌어다 놓으면 화면의 파일 입력(input[type=file])에 넣어 첨부 처리를 시킨다.
  *  4) eClass 패널에서 미리 고른 청구종류·적은 청구내역(적요)·첨부 파일(청구 준비, lib/prep.js)이 있는 거래(주소의 krext_appr)면 행 선택 뒤 세목·청구종류를 고르고 청구내역을 적고 파일을 올리며,
- *     krext_auto=add(패널의 "청구서 작성", 백그라운드 탭)이면 "내역 추가"까지 눌러 결과를 백그라운드에 보고한다 (아래 "청구 준비" 구역).
+ *     krext_auto=add(패널의 "청구서 작성", 백그라운드 탭)이면 "내역 추가"까지, add,apply("작성+신청")면 이어서 결의서 "신청"(결재요청)까지, apply("신청", krext_prep)면 저장된 결의서의 신청만,
+ *     delete("임시저장 삭제", krext_prep)면 내역 추가된 청구내역 행의 [삭제]를 눌러 결과를 백그라운드에 보고한다 (아래 "청구 준비"·"신청"·"임시저장 삭제" 구역).
  * 화면 요소는 ID 를 모르므로 라벨 문구("예산", "RCMS 부가정보", "첨부문서", "청구")로 찾는다. 값은 비어 있을 때만 채운다
  * (예외: 청구내역 칸은 고정 ID #REQ_PTCL 로 찾고, 패널에 적은 청구내역은 이 거래에 대한 명시적 입력이라 화면 기본값(카드 메모)을 덮어쓴다).
  * 설정 claimHelper(설정 페이지 "청구서(카드) 입력 도우미")로 켜고 끈다. */
@@ -659,22 +660,32 @@
    *  2) 청구내역(적요) 글이 있으면 폼의 청구내역 칸(#REQ_PTCL, 없으면 "청구내역"·"적요" 라벨 행의 입력란 — 화면이 필수로 요구)에 넣고(화면 규칙대로 1000바이트에서 자름. "내역 추가" 직전에 되돌려졌는지 한 번 더 확인)
    *  3) 파일을 파일등록 팝업의 업로드 서비스(rcomm_0089_01_c001.jct, multipart)에 직접 올린 뒤 화면 콜백 ctl.doUploadAttfile(행) 을 MAIN 훅(krext-call)으로 불러 첨부 목록(#fileList)에 넣는다
    *     (팝업을 열지 않으므로 팝업 차단·백그라운드 탭과 무관). 안 되면 첨부 창(팝업) 경로(dropFiles)로, 그것도 안 되면 안내 막대의 버튼으로 사용자가 다시 시도
-   *  4) krext_auto=add(백그라운드 탭)이면 "내역 추가"(#btn_listAdd)를 눌러 청구내역을 저장하고 결과(rexpe_0083_01_c001 응답 / alert 문구)를 백그라운드(prepRunResult)에 보고한다. 결재요청은 하지 않는다.
+   *  4) krext_auto 에 add 가 있으면(백그라운드 탭) "내역 추가"(#btn_listAdd)를 눌러 청구내역을 저장하고(임시저장 상태의 결의서) 결과(rexpe_0083_01_c001 응답 / alert 문구)를 백그라운드(prepRunResult)에 보고한다.
+   *  5) krext_auto 에 apply 가 있으면 이어서 결의서 "신청"(#btn_apprProc, 결재요청)까지 한다 — 아래 "신청" 구역. add 없이 apply 만이면(주소 krext_prep, 행 선택 없음) 이미 저장된 결의서를 신청만 한다.
+   *  6) krext_auto=delete(주소 krext_prep)면 내역 추가된 청구내역 행(청구번호 run.reqNo)의 [삭제]를 눌러 임시저장을 지운다 — 아래 "임시저장 삭제" 구역. 지워지면 거래가 미청구 목록으로 돌아온다.
    * 자동 처리 동안은 MAIN 훅이 confirm 을 자동 확인하고 alert 를 막지 않고 문구만 넘긴다(krext-auto-mode). 안내 막대(.krext-prep-bar)는 청구내역 폼(예산 행이 든 표) 바로 위 */
   let prep = null;            // 준비 항목 메타 { key, appr, card4, type, ptcl(청구내역 글), files:[{id,name,size}], attached }
   let prepFiles = [];         // File 객체 (백그라운드 base64 → File)
   let prepBar = null;
-  let prepSt = { type: '', typeErr: false, ptcl: '', ptclErr: false, files: '', filesErr: false, add: '', addErr: false };
-  let prepAuto = '';          // 주소의 krext_auto (add = 내역 추가까지)
+  let prepSt = { type: '', typeErr: false, ptcl: '', ptclErr: false, files: '', filesErr: false, add: '', addErr: false, apply: '', applyErr: false, del: '', delErr: false };
+  let prepAuto = '';          // 주소의 krext_auto: add(내역 추가) · add,apply(내역 추가 + 신청) · apply(저장된 결의서 신청만) · delete(내역 추가된 청구내역 삭제)
+  let prepSteps = new Set();  // prepAuto 를 나눈 단계 집합
+  const hasStep = (s) => prepSteps.has(s);
+  const noRowMode = () => !!prepAuto && (!hasStep('add') || !!prepSaved);   // 신청만·삭제(미청구 카드 행 선택 없음), 또는 내역 추가가 끝나 행 선택이 풀린 뒤 — 이때 비목 기본값을 넣으면 화면이 되돌리며 alert
   let prepRunning = false, prepTypeDone = false, prepPtclDone = false, prepAttachDone = false, prepReported = false;
+  let prepSaved = null;       // 내역 추가가 끝난 결의서 { reqNo(청구번호 REQ_SEQ_NO), reqCnt(결의서 차수 REQ_CNT) } — 신청 실패 보고에 "임시저장은 됨" 표시
   let prepAlerts = [];        // 자동 처리 중 화면이 띄우려던 alert 문구
-  let addWaiter = null, alertTimer = null;   // "내역 추가" 결과 대기
+  let addWaiter = null, applyWaiter = null, deleteWaiter = null, alertTimer = null;   // "내역 추가" / "신청" / "삭제" 결과 대기
+  let overlapClicked = false; // 신청 단계에서 "출장/회의/식대 중복참여확인" 버튼을 눌렀는지
+  let listLoadedTs = 0;       // 청구내역 목록 조회(rexpe_0001_01_r018) 응답이 마지막으로 온 시각
+  let seenSvc = [];           // "내역 추가"/"신청" 클릭 뒤 캡처된 .jct 서비스 (결과를 못 받았을 때 어디까지 갔는지 진단용)
   let callSeq = 0;
   const callWaiters = new Map();
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const clock = (ts) => { const d = new Date(ts); const p = (n) => String(n).padStart(2, '0'); return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  /* 주소의 청구 준비 파라미터. krext_appr 는 훅이 그 미청구 행을 자동 선택하는 승인번호, krext_prep 은 행 선택 없이 준비 항목만 찾는 승인번호(이미 청구된 거래의 결의서 신청) */
   const prepQuery = () => {
-    try { const sp = new URLSearchParams(location.search); return { appr: (sp.get('krext_appr') || '').trim(), card4: (sp.get('krext_card') || '').replace(/\D/g, '').slice(-4), auto: (sp.get('krext_auto') || '').trim() }; }
+    try { const sp = new URLSearchParams(location.search); return { appr: (sp.get('krext_appr') || sp.get('krext_prep') || '').trim(), card4: (sp.get('krext_card') || '').replace(/\D/g, '').slice(-4), auto: (sp.get('krext_auto') || '').trim() }; }
     catch (e) { return { appr: '', card4: '', auto: '' }; }
   };
   const b64ToFile = (f) => {
@@ -685,16 +696,21 @@
   };
   const bgSend = (msg) => { try { return chrome.runtime.sendMessage(msg).catch(() => null); } catch (e) { return Promise.resolve(null); } };
   const autoMode = (ms) => { try { document.dispatchEvent(new CustomEvent('krext-auto-mode', { detail: String(ms || 0) })); } catch (e) {} };
+  const autoApply = (ms) => { try { document.dispatchEvent(new CustomEvent('krext-auto-apply', { detail: String(ms || 0) })); } catch (e) {} };   // MAIN 훅: 신청 단계(확인창 자동 확인 + 결재선 팝업 가로채기)
+  const autoDelete = (ms) => { try { document.dispatchEvent(new CustomEvent('krext-auto-delete', { detail: String(ms || 0) })); } catch (e) {} };   // MAIN 훅: 삭제 단계(삭제 확인창 자동 확인)
   function setSt(k, msg, err) { prepSt[k] = msg || ''; prepSt[k + 'Err'] = !!err; renderPrepBar(); }
 
   async function loadPrep() {
     const q = prepQuery();
     if (!q.appr) return;
     prepAuto = q.auto;
-    if (!cfg || !cfg.enabled) { if (prepAuto) reportRun(false, '설정의 청구서(카드) 입력 도우미가 꺼져 있어 자동 작성을 할 수 없습니다'); return; }
-    const r = await bgSend({ type: 'prepGet', appr: q.appr, card4: q.card4, withFiles: true });
+    prepSteps = new Set(prepAuto.split(/[,+\s]+/).filter(Boolean));
+    if (prepAuto && !hasStep('add') && !hasStep('apply') && !hasStep('delete')) prepSteps.add('add');   // 알 수 없는 값은 내역 추가로
+    if (!cfg || !cfg.enabled) { if (prepAuto) reportRun(false, '설정의 청구서(카드) 입력 도우미가 꺼져 있어 자동 처리를 할 수 없습니다'); return; }
+    const r = await bgSend({ type: 'prepGet', appr: q.appr, card4: q.card4, withFiles: !prepAuto || hasStep('add') });
     if (stopped) return;
-    if (!r || !r.entry || (!r.entry.type && !r.entry.ptcl && !(r.entry.files || []).length)) {
+    if (!r || !r.entry) { if (prepAuto) reportRun(false, '패널에 준비된 항목이 없습니다 (지워졌거나 다른 브라우저의 항목)'); return; }
+    if (!r.entry.type && !r.entry.ptcl && !(r.entry.files || []).length && !(prepAuto && !hasStep('add'))) {
       if (prepAuto) reportRun(false, '패널에 준비된 항목(청구종류·청구내역·파일)이 없습니다');
       return;
     }
@@ -703,20 +719,27 @@
     const missing = (r.files || []).filter((f) => f && !f.b64).map((f) => f.name);
     if (missing.length) setSt('files', `내용이 없는 파일 제외: ${missing.join(', ')}`, true);
     log('청구 준비', prep.key, prep.type || '(청구종류 없음)', prep.ptcl ? '청구내역 있음' : '(청구내역 없음)', prepFiles.length, '개 파일, 자동:', prepAuto || '없음');
+    if (prepAuto && hasStep('delete')) { runDeleteOnly(); return; }   // 내역 추가된 청구내역 삭제 (행 선택 없음)
+    if (prepAuto && !hasStep('add')) { runApplyOnly(); return; }   // 저장된 결의서 신청만 (행 선택 없음)
     if (document.documentElement.dataset.krextRowSelected === q.appr) runPrep();   // 훅이 이미 행을 골랐음
     else if (prepAuto) setTimeout(() => {   // 자동 처리인데 60초 안에 행 선택 신호가 없으면(이미 청구된 거래 등) 실패로 보고
       if (!stopped && prep && !prepRunning && !prepReported && document.documentElement.dataset.krextRowSelected !== q.appr) reportRun(false, '청구서 화면에서 이 승인번호의 미청구 행을 찾지 못했습니다 (이미 청구됐거나 목록에 없음)');
     }, 60000);
     scheduleScan();
   }
-  function reportRun(ok, msg) {
-    if (!prepAuto || prepReported) return;
-    prepReported = true;
+  /* 백그라운드(prepRunResult)에 보고. state: saved(내역 추가됨 — 신청 단계가 남았으면 final=false 인 진행 보고) · applied(신청됨) · deleted(임시저장 삭제됨) · failed.
+   * saved 플래그는 내역 추가(임시저장)가 이미 된 상태인지 — 신청에 실패해도 결의서는 남아 있음을 패널이 알 수 있게 */
+  function report(state, msg, extra) {
+    if (!prepAuto) return;
+    const final = !(state === 'saved' && hasStep('apply'));
+    if (final) { if (prepReported) return; prepReported = true; }
     const last = document.documentElement.dataset.krextAlert || '';
-    if (!ok && !prepAlerts.length && last) prepAlerts.push(last);
-    log('자동 처리 결과', ok, msg, prepAlerts);
-    bgSend({ type: 'prepRunResult', key: prep ? prep.key : '', appr: prepQuery().appr, ok: !!ok, msg: String(msg || ''), alerts: prepAlerts.slice(0, 5) });
+    if (state === 'failed' && !prepAlerts.length && last) prepAlerts.push(last);
+    log('자동 처리 보고', state, final ? '(끝)' : '(진행)', msg, prepAlerts);
+    bgSend(Object.assign({ type: 'prepRunResult', key: prep ? prep.key : '', appr: prepQuery().appr, state, final, ok: state !== 'failed', msg: String(msg || ''),
+      alerts: prepAlerts.slice(0, 5), saved: !!prepSaved || state === 'saved' || state === 'applied' }, extra || {}));
   }
+  const reportRun = (ok, msg) => report(ok ? 'saved' : 'failed', msg);
   function mkBtn(text, fn) { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); fn(); }); return b; }
   function ensurePrepBar(f) {
     if (!prep) return;
@@ -728,11 +751,14 @@
     if (!prepBar || !prep) return;
     const st = (k) => prepSt[k] ? `<span class="krext-prep-st${prepSt[k + 'Err'] ? ' krext-err' : ''}">${esc(prepSt[k])}</span>` : '';
     const names = (prep.files || []).map((x) => x.name).join(', ');
-    let html = `<span class="krext-prep-ttl">eClass 패널에서 준비한 항목</span><span class="krext-prep-dim">승인번호 ${esc(prep.appr)}${prepAuto ? ' · 자동 작성' : ''}</span>`;
+    const modeNm = !prepAuto ? '' : hasStep('delete') ? ' · 자동 삭제' : !hasStep('add') ? ' · 자동 신청' : hasStep('apply') ? ' · 자동 작성+신청' : ' · 자동 작성';
+    let html = `<span class="krext-prep-ttl">eClass 패널에서 준비한 항목</span><span class="krext-prep-dim">승인번호 ${esc(prep.appr)}${modeNm}</span>`;
     if (prep.type) html += `<span>청구종류 <b>${esc(prep.type)}</b> ${st('type')}</span>`;
     if (prep.ptcl) html += `<span>청구내역 <b title="${esc(prep.ptcl)}">${esc(prep.ptcl.length > 30 ? prep.ptcl.slice(0, 30) + '…' : prep.ptcl)}</b> ${st('ptcl')}</span>`;
     if ((prep.files || []).length) html += `<span>첨부 <b>${prepFiles.length}개</b> <span class="krext-prep-dim">${esc(names)}</span> ${st('files')}</span>`;
-    if (prepAuto || prepSt.add) html += `<span>내역 추가 ${st('add')}</span>`;
+    if ((prepAuto && hasStep('add')) || prepSt.add) html += `<span>내역 추가 ${st('add')}</span>`;
+    if ((prepAuto && hasStep('apply')) || prepSt.apply) html += `<span>신청 ${st('apply')}</span>`;
+    if ((prepAuto && hasStep('delete')) || prepSt.del) html += `<span>임시저장 삭제 ${st('del')}</span>`;
     prepBar.innerHTML = html;
     const btns = document.createElement('span');
     btns.className = 'krext-prep-btns';
@@ -763,7 +789,7 @@
   async function runPrep() {
     if (!prep || prepRunning || stopped) return;
     prepRunning = true; renderPrepBar();
-    if (prepAuto) autoMode(180000);
+    if (prepAuto) autoMode(300000);
     try {
       const f = await waitForm(20000);
       if (!f) { setSt('type', '청구내역 폼을 찾지 못했습니다', true); if (prepAuto) reportRun(false, '청구내역 폼을 찾지 못했습니다'); return; }
@@ -784,7 +810,11 @@
           if (!ok && prepAuto) { reportRun(false, `첨부 실패: ${prepSt.files}`); return; }
         }
       }
-      if (prepAuto === 'add') { await sleep(1000); if (prep.ptcl) await applyPrepPtcl(true); await addLine(); }   // 첨부·세목 처리 중 화면이 적요를 되돌렸으면 다시 넣고 저장
+      if (hasStep('add')) {   // 첨부·세목 처리 중 화면이 적요를 되돌렸으면 다시 넣고 저장, 이어서(add,apply) 결의서 신청
+        await sleep(1000); if (prep.ptcl) await applyPrepPtcl(true);
+        const saved = await addLine();
+        if (saved && hasStep('apply')) await applyStep();
+      }
     } catch (e) { log('runPrep 오류', e); if (prepAuto) reportRun(false, String((e && e.message) || e)); }
     finally { prepRunning = false; if (prepAuto) autoMode(0); renderPrepBar(); }
   }
@@ -836,6 +866,16 @@
       const timer = setTimeout(() => { callWaiters.delete(id); resolve({ ok: false, error: '응답 없음 (훅 미동작)' }); }, 5000);
       callWaiters.set(id, (r) => { clearTimeout(timer); resolve(r); });
       try { document.dispatchEvent(new CustomEvent('krext-call', { detail: JSON.stringify({ id, fn, args: args || [] }) })); }
+      catch (e) { clearTimeout(timer); callWaiters.delete(id); resolve({ ok: false, error: String((e && e.message) || e) }); }
+    });
+  }
+  /* MAIN world 전역값 읽기 (krext-call 의 get) → { ok, value } (원시값만) */
+  function pageGet(path) {
+    return new Promise((resolve) => {
+      const id = 'g' + (++callSeq) + '_' + Date.now().toString(36);
+      const timer = setTimeout(() => { callWaiters.delete(id); resolve({ ok: false, error: '응답 없음 (훅 미동작)' }); }, 3000);
+      callWaiters.set(id, (r) => { clearTimeout(timer); resolve(r); });
+      try { document.dispatchEvent(new CustomEvent('krext-call', { detail: JSON.stringify({ id, get: path }) })); }
       catch (e) { clearTimeout(timer); callWaiters.delete(id); resolve({ ok: false, error: String((e && e.message) || e) }); }
     });
   }
@@ -898,48 +938,381 @@
     else setSt('files', `첨부 실패(${direct.reason} / ${res.reason}) — "파일 첨부" 버튼으로 다시 시도`, true);
     return false;
   }
-  /* "내역 추가"(#btn_listAdd) 를 눌러 청구내역 저장. 결과는 rexpe_0083_01_c001 응답(MAIN 훅의 .jct 캡처 postMessage) 또는 alert 문구(검증 실패)로 판단 */
+  /* "내역 추가"(#btn_listAdd) 를 눌러 청구내역 저장. 결과는 rexpe_0083_01_c001 응답(MAIN 훅의 .jct 캡처 postMessage) 또는 alert 문구(검증 실패)로 판단하고,
+   * 캡처를 놓친 경우에 대비해 화면 변화(토스트 "정상적으로 처리되었습니다", 청구내역 목록 행 증가, 목록 재조회 r018)로도 성공을 본다.
+   * 화면의 클릭 처리기는 이중 클릭 방지 플래그 dbclick 이 false 면 아무 것도 하지 않으므로(지난 저장 처리 중) 먼저 true 가 되길 기다리고,
+   * 클릭 뒤 20초 동안 화면 요청도 alert 도 없으면(반응 없음) 한 번 더 누른다. 저장됐으면 true */
+  const newestReqNo = () => { const tr = listRows()[0]; const i = tr && tr.querySelector('input.REQ_SEQ_NO_REC,input[name=REQ_SEQ_NO_REC]'); return i ? String(i.value || '').trim() : ''; };
+  /* 클릭 뒤 화면 변화 감시: 성공 토스트 · 목록 행 증가 · 목록 재조회 → { type:'saved', via:'dom' } */
+  function watchAddDom(rowsBefore, clickedAt) {
+    let obs = null, timer = null, done = false;
+    const p = new Promise((resolve) => {
+      const check = () => {
+        if (done) return;
+        const toast = /정상적으로\s*처리\s*되었습니다/.test((document.body && document.body.textContent) || '');
+        const grown = listRows().length > rowsBefore;
+        const reloaded = listLoadedTs > clickedAt;
+        if (toast || grown || reloaded) { done = true; resolve({ type: 'saved', via: toast ? 'toast' : grown ? 'rows' : 'reload', reqNo: newestReqNo() }); }
+      };
+      try { obs = new MutationObserver(check); obs.observe(document.body, { childList: true, subtree: true, characterData: true }); } catch (e) {}
+      timer = setInterval(check, 1000);
+    });
+    return { promise: p, stop: () => { done = true; if (obs) obs.disconnect(); clearInterval(timer); } };
+  }
   async function addLine() {
     setSt('add', '누르는 중…');
     const btn = document.getElementById('btn_listAdd') || findButton(['내역추가', '청구내역추가']);
-    if (!btn) { setSt('add', '"내역 추가" 버튼을 찾지 못했습니다', true); reportRun(false, '"내역 추가" 버튼을 찾지 못했습니다'); return; }
+    if (!btn) { setSt('add', '"내역 추가" 버튼을 찾지 못했습니다', true); report('failed', '"내역 추가" 버튼을 찾지 못했습니다'); return false; }
+    let dbclick = null;
+    for (let i = 0; i < 20 && !stopped; i++) {   // 화면의 이중 클릭 방지 플래그: false 면 클릭이 무시되므로 최대 10초 기다림
+      const r = await pageGet('dbclick'); dbclick = r.ok ? r.value : null;
+      if (dbclick !== false) break;
+      if (i === 0) setSt('add', '화면의 이전 처리가 끝나기를 기다리는 중…');
+      await sleep(500);
+    }
     prepAlerts = [];
+    listLoadedTs = 0;   // 저장 뒤 화면이 목록을 다시 읽는(rexpe_0001_01_r018) 것을 신청 단계가 기다림
+    seenSvc = [];
+    const rowsBefore = listRows().length;
     const result = new Promise((resolve) => { addWaiter = resolve; });
+    const clickedAt = Date.now();
+    const dom = watchAddDom(rowsBefore, clickedAt);
+    const wait = (ms) => Promise.race([result, dom.promise, new Promise((r) => setTimeout(() => r({ type: 'timeout' }), ms))]);
+    setSt('add', '누름 — 저장 응답 기다리는 중…');
+    log('내역 추가 클릭', { dbclick, rowsBefore, btn: btn.tagName + (btn.id ? '#' + btn.id : '') });
     btn.click();
-    const timeout = new Promise((r) => setTimeout(() => r({ type: 'timeout' }), 60000));
-    const res = await Promise.race([result, timeout]);
+    let res = await wait(20000);
+    if (res.type === 'timeout' && !seenSvc.length && !prepAlerts.length && addWaiter) {   // 화면이 아무 반응이 없음(요청·alert 없음) → 한 번 더
+      log('내역 추가: 20초 동안 반응 없음 → 다시 클릭');
+      setSt('add', '화면이 반응하지 않아 다시 누름…');
+      btn.click();
+      res = await wait(45000);
+    } else if (res.type === 'timeout') res = await wait(40000);
+    dom.stop();
     addWaiter = null; clearTimeout(alertTimer);
-    if (res.type === 'saved') { setSt('add', `저장됨${res.reqNo ? ` (청구번호 ${res.reqNo})` : ''}`); reportRun(true, `청구내역 추가됨${res.reqNo ? ` · 청구번호 ${res.reqNo}` : ''}${prepAlerts.length ? ' · ' + prepAlerts.join(' / ') : ''}`); }
-    else if (res.type === 'error' || res.type === 'alert') { setSt('add', res.msg, true); reportRun(false, res.msg); }
-    else { setSt('add', '결과를 확인하지 못했습니다 — 탭에서 확인하세요', true); reportRun(false, '"내역 추가" 결과를 확인하지 못했습니다 (탭에서 확인)'); }
+    if (res.type === 'saved') {
+      prepSaved = { reqNo: String(res.reqNo || ''), reqCnt: String(res.reqCnt || '') };
+      setSt('add', `저장됨${res.reqNo ? ` (청구번호 ${res.reqNo})` : ''}${res.via ? ` · ${res.via === 'toast' ? '토스트' : res.via === 'rows' ? '목록 행' : '목록 재조회'}로 확인` : ''}`);
+      report('saved', `청구내역 추가됨${res.reqNo ? ` · 청구번호 ${res.reqNo}` : ''}${prepAlerts.length ? ' · ' + prepAlerts.join(' / ') : ''}`, prepSaved);
+      return true;
+    }
+    if (res.type === 'error' || res.type === 'alert') { setSt('add', res.msg, true); report('failed', res.msg); }
+    else {
+      const diag = seenSvc.length ? `클릭 뒤 화면 요청 ${seenSvc.join(', ')} 까지 갔으나 저장 요청(rexpe_0083_01_c001)이 없음` : `클릭에 화면이 반응하지 않음 (요청·alert 없음${dbclick === false ? ', dbclick=false' : dbclick == null ? ', dbclick 읽기 실패' : ''})`;
+      setSt('add', `결과를 확인하지 못했습니다 — ${diag}. 탭에서 확인하세요`, true);
+      report('failed', `"내역 추가" 결과를 확인하지 못했습니다 — ${diag} (탭에서 확인)`);
+    }
+    return false;
   }
-  const onRowSelected = () => { if (prep && !prepRunning) runPrep(); };
+
+  /* ---------- 신청 (결의서 결재요청) ----------
+   * 화면 흐름(rexpe_0083_01.js btnApprProc): #btn_apprProc 클릭 → 검증(alert: 청구내역 없음, 계좌·연구수당 한도 등) → 출장/회의/식대 중복확인이 버튼 방식(OVERLAP_CHK_TYPE B)인 화면에서
+   * 회의비·출장·식대 건이 있으면 alert("출장/회의/식대 중복참여확인 버튼을 통해 중복여부 확인해주세요.") → uf_checkParam(5) → fn_CheckReqPtcl → ctl.call_Appl_Popup()
+   *  → 기본결재선 설정(sysConfig.P11_BASE_APPRLINE_STGUP)이 90(일반)이면 appr0043_13.act 결재정보 팝업(저장된 결재선 목록 — handleGeneralApprPopup), 아니면 rcomm_0043_01.act 팝업(부서 10 / 본인 20 / 과제담당자 그룹 30·40·50·60·70·B0001·B0017 / 과제책임자 80)
+   *  → 팝업 "결재요청"이 opener.uf_rcomm_0043_01Params(popKey, {APPR_USER_GB, APPR_USER_ID, APPR_DEPT_CD, ADD_RSPR_APPRLINE_YN, ONLINE_APPR_YN, APPL_CONT}) → ctl.uf_submit(5) → rexpe_0001_01_c003 → 토스트 "정상적으로 처리되었습니다."
+   * 백그라운드 탭에서는 팝업이 차단되므로 MAIN 훅이 jexNewWin 을 가로채(krext-appr-popup) 여기서 팝업 문서를 같은 POST 로 받아 hidden 값·체크박스 기본값을 읽고,
+   * 팝업 스크립트(rcomm_0043_01.js fn_screenInit)와 같은 서비스로 결재선을 정한 뒤 화면 콜백을 부른다(handleApprPopup). 중복참여확인 alert 가 오면 #btn_overlapChk 를 눌러 준다
+   * (중복이 없으면 화면이 confirm("…신청하시겠습니까?") 뒤 신청 버튼을 다시 누름 — 훅이 자동 확인). 결과는 rexpe_0001_01_c003 응답 또는 alert 문구 */
+  const listRows = () => Array.from(document.querySelectorAll('table#newExpList tbody tr')).filter((tr) => tr.id !== 'expListForm' && tr.id !== 'expListFormHeader' && visible(tr));
+  /* 청구내역 목록이 (다시) 읽힐 때까지: r018 응답이 온 뒤 잠시, 또는 이미 행이 있으면(늦게 시작해 응답을 못 본 경우) 바로 */
+  async function waitList(ms) {
+    const st = Date.now();
+    while (!stopped && Date.now() - st < ms) {
+      if (listLoadedTs > st - 1000 || (listLoadedTs === 0 && listRows().length && Date.now() - st > 1500)) break;
+      await sleep(250);
+    }
+    await sleep(700);   // 목록 그리기
+  }
+  /* 화면과 같은 규약으로 .jct 서비스 호출 (이 프레임의 세션): POST _JSON_=encodeURIComponent(encodeURIComponent(JSON)), 응답 euc-kr JSON. 오류(COMMON_HEAD.ERROR)는 예외 */
+  async function jct(service, input) {
+    const res = await fetch(`/${service}.jct`, { method: 'POST', credentials: 'include', cache: 'no-store',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' },
+      body: '_JSON_=' + encodeURIComponent(encodeURIComponent(JSON.stringify(input || {}))) });
+    if (!res.ok) throw new Error(`${service} HTTP ${res.status}`);
+    const data = await readJson(res);
+    if (!data) throw new Error(`${service} 응답이 JSON 이 아님`);
+    const head = data.COMMON_HEAD;
+    if (head && (head.ERROR === true || head.ERROR === 'true')) throw new Error(`${service} 오류: ${head.MESSAGE || head.CODE || ''}`);
+    return data;
+  }
+  async function readText(res) {
+    const buf = await res.arrayBuffer();
+    const cs = /charset=([\w-]+)/i.exec(res.headers.get('content-type') || '');
+    try { return new TextDecoder(cs ? cs[1] : 'euc-kr').decode(buf); } catch (e) { return new TextDecoder('utf-8').decode(buf); }
+  }
+  async function readJson(res) { try { return JSON.parse(await readText(res)); } catch (e) { return null; } }
+  async function applyStep() {
+    setSt('apply', '청구내역 목록 확인 중…');
+    await waitList(hasStep('add') ? 12000 : 25000);
+    if (stopped) return;
+    if (!listRows().length) { setSt('apply', '신청할 청구내역이 없습니다', true); report('failed', '신청할 청구내역이 없습니다 (결의서가 비어 있음)'); return; }
+    const btn = document.getElementById('btn_apprProc');
+    if (!btn || !visible(btn)) { setSt('apply', '"신청" 버튼이 없습니다', true); report('failed', '"신청" 버튼이 없습니다 (이미 신청된 결의서이거나 신청할 수 없는 상태)'); return; }
+    setSt('apply', '신청 중…');
+    autoApply(150000);
+    prepAlerts = []; overlapClicked = false; seenSvc = [];
+    const result = new Promise((resolve) => { applyWaiter = resolve; });
+    btn.click();
+    const timeout = new Promise((r) => setTimeout(() => r({ type: 'timeout' }), 120000));
+    const res = await Promise.race([result, timeout]);
+    applyWaiter = null; clearTimeout(alertTimer);
+    autoApply(0);
+    const tail = prepSaved && prepSaved.reqNo ? ` · 청구번호 ${prepSaved.reqNo}` : '';
+    if (res.type === 'applied') { setSt('apply', '신청됨'); report('applied', `신청됨 (결재요청)${tail}${prepAlerts.length ? ' · ' + prepAlerts.join(' / ') : ''}`, prepSaved || {}); }
+    else if (res.type === 'error' || res.type === 'alert') { setSt('apply', res.msg, true); report('failed', `신청 실패: ${res.msg}`); }
+    else {
+      const diag = seenSvc.length ? `클릭 뒤 화면 요청 ${seenSvc.join(', ')} 까지 갔으나 신청 요청(rexpe_0001_01_c003)이 없음` : '클릭에 화면이 반응하지 않음 (요청·alert 없음)';
+      setSt('apply', `결과를 확인하지 못했습니다 — ${diag}. 탭에서 확인하세요`, true); report('failed', `신청 결과를 확인하지 못했습니다 — ${diag} (탭에서 확인)`);
+    }
+  }
+  /* krext_auto=apply (행 선택 없음): 이미 내역 추가된 결의서를 신청만. 청구서 화면은 PRJ_NO 로 열면 작성중 결의서(REQ_CNT -1 = 최근 차수)의 청구내역을 보여 준다 */
+  async function runApplyOnly() {
+    if (!prep || prepRunning || stopped) return;
+    prepRunning = true; renderPrepBar();
+    prepSaved = { reqNo: String((prep.run && prep.run.reqNo) || ''), reqCnt: String((prep.run && prep.run.reqCnt) || '') };
+    autoMode(300000);
+    try {
+      const f = await waitForm(30000);
+      if (!f) { setSt('apply', '청구서 화면을 찾지 못했습니다', true); report('failed', '청구서 화면(청구내역 폼)을 찾지 못했습니다'); return; }
+      if (!slipCnt()) { setSt('apply', '새 결의서 폼으로 열려 목록이 비어 있습니다', true); report('failed', '청구서 화면이 저장된 결의서가 아니라 새 결의서 폼으로 열렸습니다(주소에 REQ_CNT 없음) — 탭에서 확인하세요'); return; }
+      await applyStep();
+    } catch (e) { log('runApplyOnly 오류', e); report('failed', String((e && e.message) || e)); }
+    finally { prepRunning = false; autoMode(0); renderPrepBar(); }
+  }
+  /* ---------- 임시저장 삭제 (내역 추가된 청구내역 행의 [삭제]) ----------
+   * 화면 흐름(rexpe_0083_01.js .DelLnk_Rec click): 결의서 상태가 10/20/50 이면 alert("신청/승인된 청구건은 추가/수정/삭제가 불가합니다.") → 원청구 행이 하나뿐이면
+   * confirm("결의 내역의 모든 정보가 삭제됩니다.\n삭제하시겠습니까?") → rtask_0008_t04_01_d001(결의서 전체 삭제) 뒤 top.jex.tabs.close 로 이 화면 탭이 닫힘,
+   * 아니면 confirm("해당 청구내역을 삭제하시겠습니까?") → rexpe_0001_01_d001 {USEFAC_SEQ_NO, REQ_SEQ_NO, TAX_CTRL_YN}. (도서 23 은 엑셀 다운로드 confirm 이 먼저 — 취소해도 삭제는 이어짐)
+   * 행은 table#newExpList 의 tr(id = REQ_SEQ_NO, hidden .REQ_SEQ_NO_REC)에서 내역 추가 때 받은 청구번호(run.reqNo)로 찾는다. 저장된 결의서는 background prepRun 이 주소에 REQ_CNT(run.reqCnt)·APPR_DIV_CD=40 을
+   * 붙여 연다 — PRJ_NO 만 주면 새 결의서 폼(hidden REQ_CNT 빈값, 목록 0건)이라 행이 없다(2026-09-25 CDP 확인). 결과는 삭제 서비스 응답, 또는 화면 탭이 닫혀(pagehide) 이 프레임이 사라지면 성공으로 본다 */
+  const slipCnt = () => String(((document.getElementById('REQ_CNT') || {}).value) || '').trim();   // 화면 hidden 의 결의서 차수 (주소 REQ_CNT 를 서버가 렌더. 새 결의서 폼이면 빈값)
+  const rowByReqNo = (reqNo) => {
+    if (!reqNo) return null;
+    const byId = document.getElementById(reqNo);
+    if (byId && byId.tagName === 'TR' && byId.closest('table#newExpList')) return byId;
+    return listRows().find((tr) => Array.from(tr.querySelectorAll('input.REQ_SEQ_NO_REC,input[name=REQ_SEQ_NO_REC]')).some((i) => String(i.value || '').trim() === reqNo)) || null;
+  };
+  async function runDeleteOnly() {
+    if (!prep || prepRunning || stopped) return;
+    prepRunning = true; renderPrepBar();
+    const reqNo = String((prep.run && prep.run.reqNo) || '').trim();
+    autoMode(300000);
+    try {
+      const f = await waitForm(30000);
+      if (!f) { setSt('del', '청구서 화면을 찾지 못했습니다', true); report('failed', '청구서 화면(청구내역 폼)을 찾지 못했습니다'); return; }
+      setSt('del', '청구내역 목록 확인 중…');
+      await waitList(25000);
+      if (stopped) return;
+      const curCnt = slipCnt();
+      if (!curCnt) { setSt('del', '새 결의서 폼으로 열려 목록이 비어 있습니다', true); report('failed', '청구서 화면이 저장된 결의서가 아니라 새 결의서 폼으로 열렸습니다(주소에 REQ_CNT 없음) — 탭에서 확인하세요'); return; }
+      if (!reqNo) { setSt('del', '청구번호를 몰라 삭제할 행을 찾지 못했습니다', true); report('failed', '이 항목의 청구번호가 기록돼 있지 않아 삭제할 청구내역 행을 찾지 못했습니다 — 탭의 청구내역 목록에서 [삭제]를 직접 누르세요'); return; }
+      const row = rowByReqNo(reqNo);
+      if (!row) { setSt('del', `청구번호 ${reqNo} 행이 없습니다`, true); report('failed', `청구내역 목록(결의서 ${curCnt}차)에 청구번호 ${reqNo} 행이 없습니다 (이미 삭제됐거나 다른 결의서) — 탭에서 확인하세요`); return; }
+      const link = row.querySelector('a.DelLnk_Rec') || Array.from(row.querySelectorAll('a')).find((a) => /삭제/.test(a.textContent || ''));
+      if (!link) { setSt('del', '[삭제] 링크가 없습니다', true); report('failed', '그 행에 [삭제] 링크가 없습니다 (신청·승인된 결의서이거나 부가세 청구건)'); return; }
+      setSt('del', '삭제 중…');
+      autoDelete(60000);
+      prepAlerts = [];
+      const result = new Promise((resolve) => { deleteWaiter = resolve; });
+      const onGone = () => { if (deleteWaiter) { deleteWaiter = null; report('deleted', '결의서가 삭제되어 청구서 화면이 닫혔습니다 (이 건만 있던 결의서)'); } };   // 결의서 전체 삭제 → 화면 탭이 닫히면 응답을 못 받으므로 여기서 바로 보고
+      window.addEventListener('pagehide', onGone, { once: true });
+      link.click();
+      const timeout = new Promise((r) => setTimeout(() => r({ type: 'timeout' }), 60000));
+      const res = await Promise.race([result, timeout]);
+      window.removeEventListener('pagehide', onGone);
+      deleteWaiter = null; clearTimeout(alertTimer);
+      autoDelete(0);
+      if (res.type === 'deleted') { setSt('del', '삭제됨'); report('deleted', `임시저장 삭제됨 · 청구번호 ${reqNo}${res.whole ? ' (결의서 전체 삭제)' : ''}${prepAlerts.length ? ' · ' + prepAlerts.join(' / ') : ''}`); }
+      else if (res.type === 'error' || res.type === 'alert') { setSt('del', res.msg, true); report('failed', `삭제 실패: ${res.msg}`); }
+      else { setSt('del', '결과를 확인하지 못했습니다 — 탭에서 확인하세요', true); report('failed', '삭제 결과를 확인하지 못했습니다 (탭에서 확인)'); }
+    } catch (e) { log('runDeleteOnly 오류', e); report('failed', String((e && e.message) || e)); }
+    finally { prepRunning = false; autoMode(0); renderPrepBar(); }
+  }
+  /* 결재선 팝업 대신: 팝업 문서(rcomm_0043_01.act, 같은 POST 값)를 받아 hidden(BASE_APPRLINE_STGUP, APPR_DEPT_CD, PRJ_NO, USER_ID, USEFAC_SEQ_NO, PRJ_CHRG_GRP_CD, PURCH_APPR_GRP_GB, RTN_FUNC, POP_KEY)과
+   * 체크박스 기본값(CHK_ONLINE_APPR_YN 온라인결재, CHK_ADD_RSPR_APPRLINE 과제책임자 추가)을 읽고, 팝업 스크립트 fn_screenInit 과 같은 규칙으로 기본 선택 결재선을 정해 화면 콜백을 부른다.
+   * 팝업이 기본으로 고르는 항목 = 부서 결재선(10)은 부서 하나, 본인(20)은 본인, 과제담당자 그룹은 목록 중 본인(있으면) 아니면 첫 행, 과제책임자(80)는 과제책임자 */
+  async function handleApprPopup(url, params) {
+    if (/appr0043_13\.act/.test(url)) return handleGeneralApprPopup(url, params);   // 기본결재선 "일반" 은 결재정보 팝업(저장된 결재선 목록) — 아래 handleGeneralApprPopup
+    setSt('apply', '결재선 정하는 중…');
+    let doc = null;
+    try {
+      const body = new URLSearchParams();
+      for (const [k, v] of Object.entries(params || {})) body.append(k, v == null ? '' : String(v));
+      const res = await fetch(url.startsWith('/') ? url : '/' + url, { method: 'POST', body, credentials: 'include', cache: 'no-store' });
+      if (!res.ok) return { ok: false, error: `결재선 팝업 문서 HTTP ${res.status}` };
+      doc = new DOMParser().parseFromString(await readText(res), 'text/html');
+    } catch (e) { return { ok: false, error: `결재선 팝업 문서를 받지 못했습니다: ${(e && e.message) || e}` }; }
+    const val = (id) => { const el = doc.getElementById(id); return el ? String(el.value != null ? el.value : (el.textContent || '')).trim() : ''; };
+    // 체크박스: checked 속성, 또는 인라인 스크립트가 .prop/.attr("checked", true) 로 켜는 경우
+    const scriptOn = (id) => { const re = new RegExp('#' + id + '["\']\\)\\.(?:prop|attr)\\(\\s*["\']checked["\']\\s*,\\s*(?:true|["\'](?:checked|true)["\'])\\s*\\)'); return Array.from(doc.scripts).some((s) => re.test(s.textContent || '')); };
+    const checked = (id) => { const el = doc.getElementById(id); return !!(el && (el.hasAttribute('checked') || el.checked)) || scriptOn(id); };
+    const p = params || {};
+    const stgup = String(p.BASE_APPRLINE_STGUP || '') || val('BASE_APPRLINE_STGUP');   // 화면이 넘긴 값 우선 (ASCII 라 인코딩 문제 없음)
+    if (!stgup) return { ok: false, error: '기본결재선 정보가 없습니다 (팝업 문서에 BASE_APPRLINE_STGUP 이 없음 — 세션이 끊겼는지 확인)' };
+    const usefac = val('USEFAC_SEQ_NO') || hidVal('USEFAC_SEQ_NO') || (cfg && cfg.usefacSeqNo) || '10';
+    const prjNo = val('PRJ_NO') || String(p.PRJ_NO || '');
+    const userId = val('USER_ID') || hidVal('USER_ID');
+    let gubun = '2', pickId = '', pickNm = '';
+    try {
+      if (stgup === '10') {
+        const d = await jct('rcomm_0043_01_r002', { USEFAC_SEQ_NO: usefac, DEPT_CD: val('APPR_DEPT_CD') || String(p.APPR_DEPT_CD || '') });
+        gubun = '1'; pickId = String((d && d.APPR_DEPT_CD) || ''); pickNm = String((d && d.APPR_DEPT_NM) || '');
+        if (!pickId) return { ok: false, error: '부서 결재선을 찾지 못했습니다' };
+      } else if (stgup === '20') {
+        pickId = userId; pickNm = val('USER_NM');
+      } else if (stgup === '80') {
+        const d = await jct('rcomm_0043_01_r004', { USEFAC_SEQ_NO: usefac, PRJ_NO: prjNo });
+        pickId = String((d && d.PRJ_RSPR_EMP_ID) || ''); pickNm = String((d && d.PRJ_RSPR_EMP_NM) || '');
+        if (!pickId) return { ok: false, error: '과제책임자 결재선을 찾지 못했습니다' };
+      } else if (['30', '40', '50', '60', '70', 'B0001', 'B0017'].includes(stgup)) {
+        let grp = val('PRJ_CHRG_GRP_CD');
+        const purch = val('PURCH_APPR_GRP_GB');
+        if ((stgup === 'B0001' && purch === '10') || stgup === '50') grp = 'B0001';
+        else if ((stgup === 'B0009' && purch === '10') || stgup === '60') grp = 'B0009';
+        else if (stgup === '70') grp = 'B0008';
+        else {
+          if (prjNo) { const d = await jct('rcomm_0102_01_r001', { USEFAC_SEQ_NO: usefac, PRJ_NO: prjNo }); grp = String((d && d.PRJ_CHRG_GRP_CD) || grp || ''); }
+          if (stgup === 'B0017') grp = stgup;
+        }
+        const d = await jct('rcomm_0043_01_r001', { USER_GRP_CD: grp });
+        const rec = Array.isArray(d && d.REC) ? d.REC : [];
+        if (!rec.length) return { ok: false, error: `결재선 담당자 목록이 비어 있습니다 (그룹 ${grp || '없음'})` };
+        const row = rec.find((r) => userId && String(r.APPR_USER_ID || '') === userId) || rec[0];
+        pickId = String(row.APPR_USER_ID || ''); pickNm = String(row.APPR_USER_NM || '');
+      } else return { ok: false, error: `지원하지 않는 기본결재선 구분(${stgup})` };
+    } catch (e) { return { ok: false, error: `결재선 조회 실패: ${(e && e.message) || e}` }; }
+    if (!pickId) return { ok: false, error: '결재선 항목을 정하지 못했습니다' };
+    const line = {
+      APPR_USER_GB: gubun,                                   // 2 사용자 / 1 부서
+      APPR_USER_ID: gubun === '1' ? '' : pickId,
+      APPR_DEPT_CD: gubun === '1' ? pickId : '',
+      ADD_RSPR_APPRLINE_YN: checked('CHK_ADD_RSPR_APPRLINE') ? 'Y' : 'N',
+      ONLINE_APPR_YN: checked('CHK_ONLINE_APPR_YN') ? 'Y' : 'N',
+      APPL_CONT: p.APPL_CONT != null ? String(p.APPL_CONT) : val('APPL_CONT')   // 화면이 넘긴 값을 그대로 (팝업 문서의 값은 POST 인코딩(UTF-8 ↔ EUC-KR) 차이로 한글이 깨질 수 있음)
+    };
+    const rtn = val('RTN_FUNC') || 'uf_rcomm_0043_01Params';
+    const popKey = val('POP_KEY') || '1';
+    log('결재선', stgup, pickNm, line);
+    setSt('apply', `결재요청 보내는 중… (결재선 ${pickNm || pickId}${line.ONLINE_APPR_YN === 'Y' ? ' · 온라인결재' : ''})`);
+    const r = await pageCall(rtn, [popKey, line]);   // 화면 콜백 → 500ms 뒤 ctl.uf_submit(5) → rexpe_0001_01_c003
+    if (!r.ok) return { ok: false, error: `화면 콜백(${rtn}) 호출 실패: ${r.error}` };
+    return { ok: true };
+  }
+  /* 기본결재선 "일반"(sysConfig.P11_BASE_APPRLINE_STGUP 90)의 결재정보 팝업 appr0043_13.act 대신 (2026-09-25 팝업 인라인 스크립트·서비스 CDP 실측):
+   * 팝업은 저장된 결재선 목록 appr0043_05 {USEFAC_SEQ_NO, USER_ID} → REC[{KEY, DAT}] 를 select 에 넣고(첫 KEY 가 "0" 이 아니면 "0 최근결재선" 을 앞에 붙임), 고른 결재선의 결재자 행을
+   * appr0043_04 {…, APPRLINE_SEQ_NO} → REC[{APPR_ORD, DEPT_USER_GB(1 부서/2 사용자), APPR_USER_ID, USER_NM, POS_NM/APPR_POS_NM/APPR_POS_CD, DEPT_CD, DEPT_NM, APPRLINE_USER_GB(2 결재/3 합의/4 공람/5 접수/6 감사)}] 로 표에 그린다
+   * (열릴 때는 select 가 아직 비어 APPRLINE_SEQ_NO 없이 조회돼 표가 비고, 사용자가 결재선을 골라야 채워짐). "결재요청"(#applyApprLine → uf_rcomm_0043_13Params)은 표의 행으로 action09("out") =
+   * appr0043_12 {USEFAC_SEQ_NO, USER_ID, APPRLINE_NM:"최근결재선", APPRLINE_SEQ_NO, REC[행]} (내 최근결재선 등록. 같은 사람이 결재자·공람자면 alert 후 중단, 그 밖의 중복은 뒤 행 제거, 순번은 1부터 연속) 뒤
+   * opener.uf_rcomm_0043_01Params(POP_KEY(문서에 없음), null) → 500ms 뒤 ctl.uf_submit(5) → rexpe_0001_01_c003. 여기서는 목록 순서대로 결재자 행이 있는 첫 결재선(보통 최근결재선)을 골라 같은 순서로 처리한다 */
+  async function handleGeneralApprPopup(url, params) {
+    setSt('apply', '결재선(일반) 정하는 중…');
+    let doc = null;
+    try {
+      const body = new URLSearchParams();
+      for (const [k, v] of Object.entries(params || {})) body.append(k, v == null ? '' : String(v));
+      const res = await fetch(url.startsWith('/') ? url : '/' + url, { method: 'POST', body, credentials: 'include', cache: 'no-store' });
+      if (!res.ok) return { ok: false, error: `결재정보 팝업 문서 HTTP ${res.status}` };
+      doc = new DOMParser().parseFromString(await readText(res), 'text/html');
+    } catch (e) { return { ok: false, error: `결재정보 팝업 문서를 받지 못했습니다: ${(e && e.message) || e}` }; }
+    const val = (id) => { const el = doc.getElementById(id); return el ? String(el.value != null ? el.value : (el.textContent || '')).trim() : ''; };
+    const usefac = val('USEFAC_SEQ_NO') || hidVal('USEFAC_SEQ_NO') || (cfg && cfg.usefacSeqNo) || '10';
+    const userId = val('USER_ID') || hidVal('USER_ID');
+    if (!userId) return { ok: false, error: '결재정보 팝업 문서에 USER_ID 가 없습니다 (세션이 끊겼는지 확인)' };
+    if (val('FORM_PAPER_SEQ_NO')) return { ok: false, error: '기안서식(FORM_PAPER_SEQ_NO)이 있는 결재정보 팝업은 자동 신청을 지원하지 않습니다 — 탭에서 신청 버튼을 누르세요' };
+    let picked = null, rows = [], names = [];
+    try {
+      const d = await jct('appr0043_05', { USEFAC_SEQ_NO: usefac, USER_ID: userId });
+      const opts = (Array.isArray(d && d.REC) ? d.REC : []).map((r) => ({ key: String(r.KEY == null ? '' : r.KEY), name: String(r.DAT || '') }));
+      if (opts.length && opts[0].key !== '0') opts.unshift({ key: '0', name: '최근결재선' });
+      if (!opts.length) return { ok: false, error: '저장된 결재선이 없습니다 — R&D ERP 전자결재 › 결재선관리에서 개인결재선을 먼저 등록하세요' };
+      names = opts.map((o) => o.name);
+      for (const o of opts) {
+        const r = await jct('appr0043_04', { USEFAC_SEQ_NO: usefac, USER_ID: userId, APPRLINE_SEQ_NO: o.key });
+        const rec = Array.isArray(r && r.REC) ? r.REC : [];
+        if (rec.length) { picked = o; rows = rec; break; }
+      }
+      if (!picked) return { ok: false, error: `결재선(${names.join(', ')})에 결재자가 없습니다 — 탭에서 신청 버튼을 눌러 결재선을 고르세요` };
+    } catch (e) { return { ok: false, error: `결재선 조회 실패: ${(e && e.message) || e}` }; }
+    // 팝업 표의 행(action58) → 등록 입력(action09): 부서(1)는 부서명·부서코드만, 사용자(2)는 사번·이름·직급
+    const rec = rows.map((r) => {
+      const dept = String(r.DEPT_USER_GB || '') === '1';
+      return { APPR_ORD: String(r.APPR_ORD || ''), DEPT_USER_GB: String(r.DEPT_USER_GB || ''), POS_NM: dept ? '' : String(r.APPR_POS_NM || r.POS_NM || ''), USER_NM: dept ? String(r.DEPT_NM || '') : String(r.USER_NM || ''),
+        APPR_USER_ID: dept ? '' : String(r.APPR_USER_ID || ''), DEPT_CD: String(r.DEPT_CD || ''), DEPT_NM: String(r.DEPT_NM || ''), APPRLINE_USER_GB: String(r.APPRLINE_USER_GB || ''), APPR_POS_CD: dept ? '' : String(r.APPR_POS_CD || ''), REQD_YN: 'N' };
+    });
+    const kept = [];
+    for (const r of rec) {
+      const dup = kept.find((k) => k.APPR_USER_ID === r.APPR_USER_ID);
+      if (dup && r.APPRLINE_USER_GB === '4') return { ok: false, error: '결재자와 공람자를 동일인으로 지정할 수 없습니다 (결재선을 고치세요)' };
+      if (!dup) kept.push(r);
+    }
+    if (kept.map((r) => Number(r.APPR_ORD)).sort((a, b) => a - b).some((n, i) => n !== i + 1)) return { ok: false, error: '결재자 순번이 1부터 연속이 아닙니다 (결재선을 고치세요)' };
+    const who = kept.map((r) => r.USER_NM).filter(Boolean).join(' → ');
+    log('결재선(일반)', picked.name, who, kept);
+    setSt('apply', `결재요청 보내는 중… (결재선 ${picked.name}: ${who})`);
+    try { await jct('appr0043_12', { USEFAC_SEQ_NO: usefac, USER_ID: userId, APPRLINE_NM: '최근결재선', APPRLINE_SEQ_NO: picked.key, REC: kept }); }
+    catch (e) { return { ok: false, error: `최근결재선 등록(appr0043_12) 실패: ${(e && e.message) || e}` }; }
+    const r = await pageCall('uf_rcomm_0043_01Params', [null, null]);   // 팝업처럼 결재선 객체 없이 → 500ms 뒤 ctl.uf_submit(5) → rexpe_0001_01_c003
+    if (!r.ok) return { ok: false, error: `화면 콜백(uf_rcomm_0043_01Params) 호출 실패: ${r.error}` };
+    return { ok: true };
+  }
+  const onApprPopup = (ev) => {
+    let d = null; try { d = JSON.parse(String((ev && ev.detail) || '')); } catch (e) { return; }
+    if (!applyWaiter || !d) return;
+    handleApprPopup(String(d.url || ''), d.params || {}).then((r) => { if (!r.ok && applyWaiter) { const w = applyWaiter; applyWaiter = null; w({ type: 'error', msg: r.error }); } });
+  };
+  const onRowSelected = () => { if (prep && !prepRunning && (!prepAuto || hasStep('add'))) runPrep(); };
   const onPopupBlocked = () => { if (pending) { const p = pending; pending = null; p.resolve({ type: 'blocked' }); } };
   const onCallResult = (ev) => { let r = null; try { r = JSON.parse(String((ev && ev.detail) || '')); } catch (e) { return; } const w = r && callWaiters.get(r.id); if (w) { callWaiters.delete(r.id); w(r); } };
-  const onAlert = (ev) => {   // 자동 처리 중 화면의 alert: 검증 실패 문구. 2.5초 안에 저장 응답이 오지 않으면 그 문구를 실패 사유로
+  const onAlert = (ev) => {   // 자동 처리 중 화면의 alert: 검증 실패 문구. 2.5초 안에 저장/신청 응답이 오지 않으면 그 문구를 실패 사유로
     const msg = String((ev && ev.detail) || '').trim(); if (!msg) return;
     prepAlerts.push(msg); log('alert', msg);
-    if (addWaiter) { clearTimeout(alertTimer); alertTimer = setTimeout(() => { if (addWaiter) { const w = addWaiter; addWaiter = null; w({ type: 'alert', msg }); } }, 2500); }
+    if (applyWaiter && /중복참여확인\s*버튼/.test(msg) && !overlapClicked) {   // 신청 전에 "출장/회의/식대 중복참여확인" 버튼을 눌러야 하는 화면 설정: 눌러 주면 화면이 확인 뒤 신청을 이어 간다
+      overlapClicked = true;
+      const b = document.getElementById('btn_overlapChk') || findButton(['출장/회의/식대중복참여확인']);
+      if (b) { setSt('apply', '출장/회의/식대 중복참여확인 중…'); setTimeout(() => { try { b.click(); } catch (e) {} }, 300); return; }
+    }
+    const kind = addWaiter ? 'add' : applyWaiter ? 'apply' : deleteWaiter ? 'delete' : '';
+    if (!kind) return;
+    if (kind === 'delete' && /^\[확인 필요\]/.test(msg)) return;   // 삭제 단계에서 일부러 취소한 확인창(도서 엑셀 다운로드 등)은 실패 사유가 아님
+    clearTimeout(alertTimer);
+    alertTimer = setTimeout(() => {
+      const w = kind === 'add' ? addWaiter : kind === 'apply' ? applyWaiter : deleteWaiter;
+      if (!w) return;
+      if (kind === 'add') addWaiter = null; else if (kind === 'apply') applyWaiter = null; else deleteWaiter = null;
+      w({ type: 'alert', msg });
+    }, 2500);
   };
-  const onJctMessage = (ev) => {   // MAIN 훅이 캡처한 .jct 호출 (rnd-bridge 와 같은 postMessage)
-    if (ev.source !== window || !ev.data || ev.data.__krext !== 'jct' || !addWaiter) return;
-    const e = ev.data.entry; if (!e || e.service !== 'rexpe_0083_01_c001') return;
+  const onJctMessage = (ev) => {   // MAIN 훅이 캡처한 .jct 호출 (rnd-bridge 와 같은 postMessage): 내역 추가 c001 / 신청 c003 결과, 목록 조회 r018 시각
+    if (ev.source !== window || !ev.data || ev.data.__krext !== 'jct') return;
+    const e = ev.data.entry; if (!e || !e.service) return;
+    if ((addWaiter || applyWaiter || deleteWaiter) && seenSvc.length < 12 && !seenSvc.includes(e.service)) seenSvc.push(e.service);   // 진단: 클릭 뒤 어디까지 갔는지
+    if (e.service === 'rexpe_0001_01_r018') { listLoadedTs = Date.now(); return; }
+    const isAdd = e.service === 'rexpe_0083_01_c001', isApply = e.service === 'rexpe_0001_01_c003';
+    const isDel = e.service === 'rexpe_0001_01_d001' || e.service === 'rtask_0008_t04_01_d001';
+    const w = isAdd ? addWaiter : isApply ? applyWaiter : isDel ? deleteWaiter : null;
+    if (!w) return;
     const text = String(e.response || '');
     let data = null; try { data = JSON.parse(text); } catch (x) {}
     const head = data && data.COMMON_HEAD;
     const isErr = head ? (head.ERROR === true || head.ERROR === 'true') : /"ERROR"\s*:\s*(true|"true")/.test(text);
     const msgM = /"MESSAGE"\s*:\s*"([^"]*)"/.exec(text);
     const reqM = /"REQ_SEQ_NO"\s*:\s*"([^"]*)"/.exec(text);
-    const w = addWaiter; addWaiter = null; clearTimeout(alertTimer);
-    if (e.status && e.status !== 200) w({ type: 'error', msg: `저장 요청 HTTP ${e.status}` });
-    else if (isErr) w({ type: 'error', msg: `저장 오류: ${(head && (head.MESSAGE || head.CODE)) || (msgM && msgM[1]) || '알 수 없음'}` });
-    else w({ type: 'saved', reqNo: (data && data.REQ_SEQ_NO) || (reqM && reqM[1]) || '' });
+    const cntM = /"REQ_CNT"\s*:\s*"?([^",}]*)"?/.exec(text);
+    if (isAdd) addWaiter = null; else if (isApply) applyWaiter = null; else deleteWaiter = null;
+    clearTimeout(alertTimer);
+    const what = isAdd ? '저장' : isApply ? '신청' : '삭제';
+    if (e.status && e.status !== 200) w({ type: 'error', msg: `${what} 요청 HTTP ${e.status}` });
+    else if (isErr) w({ type: 'error', msg: `${what} 오류: ${(head && (head.MESSAGE || head.CODE)) || (msgM && msgM[1]) || '알 수 없음'}` });
+    else if (isAdd) w({ type: 'saved', reqNo: (data && data.REQ_SEQ_NO) || (reqM && reqM[1]) || '', reqCnt: (data && data.REQ_CNT) || (cntM && cntM[1]) || '' });
+    else if (isDel) w({ type: 'deleted', whole: e.service === 'rtask_0008_t04_01_d001' });
+    else w({ type: 'applied' });
   };
   function bindPrepEvents() {
     document.addEventListener('krext-row-selected', onRowSelected);
     document.addEventListener('krext-popup-blocked', onPopupBlocked);
     document.addEventListener('krext-call-result', onCallResult);
     document.addEventListener('krext-alert', onAlert);
+    document.addEventListener('krext-appr-popup', onApprPopup);
     window.addEventListener('message', onJctMessage);
   }
   function unbindPrepEvents() {
@@ -947,6 +1320,7 @@
     document.removeEventListener('krext-popup-blocked', onPopupBlocked);
     document.removeEventListener('krext-call-result', onCallResult);
     document.removeEventListener('krext-alert', onAlert);
+    document.removeEventListener('krext-appr-popup', onApprPopup);
     window.removeEventListener('message', onJctMessage);
   }
 
@@ -962,8 +1336,10 @@
   function apply(f) {
     if (cfg.dragDrop && f.attach) bindDropZone(f.attach);
     ensurePicks(f);
-    if (cfg.defaultBudget) fillDefault(f.sel1, cfg.defaultBudget);
-    if (cfg.defaultRcms) fillDefault(f.rcms, cfg.defaultRcms);
+    if (!noRowMode()) {   // 행 선택 없는 자동 모드에선 기본값을 넣지 않는다 — 카드 행이 체크돼 있지 않으면 화면의 비목 change 핸들러가 값을 되돌리며 alert("청구할 카드사용내역을 먼저 선택해주세요.")
+      if (cfg.defaultBudget) fillDefault(f.sel1, cfg.defaultBudget);
+      if (cfg.defaultRcms) fillDefault(f.rcms, cfg.defaultRcms);
+    }
     watchClaimType(f);
     if (prep) ensurePrepBar(f);
   }
