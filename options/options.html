@@ -144,13 +144,13 @@
       패널의 <b>급여·연구수당 보기</b> 버튼을 누르면 <b>더 받을 수 있는 금액</b>(월 기본연봉 × 12 × 직급 비율 − 올해 1월부터의 연구수당지급 합계 − 받기 예정)과 <b>받기 예정 연구수당</b> 목록만 표시하고, 기본연봉·올해 지급 합계·한도는 금액 칸의 툴팁에서 볼 수 있습니다.
       HR System 에는 아무것도 쓰지 않으며 값은 이 브라우저(확장 저장소)에만 남습니다.</p>
     <label class="check"><input type="checkbox" id="hrEnabled"> 급여명세서 수집 및 패널 표시</label>
-    <label class="check"><input type="checkbox" id="hrAutoLogin"> 로그인이 풀려 있으면 아래 HR System 링크를 비활성 탭으로 열어 자동 로그인(SSO)한 뒤 다시 읽기 (30초 안에 안 되면 그 탭을 열어 둠)</label>
+    <label class="check"><input type="checkbox" id="hrAutoLogin"> 로그인이 풀려 있으면 아래 HR System 링크(eClass 의 SSO 중계 주소)로 자동 로그인한 뒤 다시 읽기 — 백그라운드에서 먼저 시도하고, 안 되면 비활성 탭으로 열어 최대 30초 기다림 (그래도 안 되면 그 탭을 열어 둠. eClass 에 로그인돼 있어야 함)</label>
     <div class="grid">
       <label>직급 <select id="hrGrade"><option value="">자동 감지 (HR 직원 정보)</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option><option value="P4">P4</option></select></label>
       <label>직급별 연구수당 한도 비율 (%) — 한 줄에 하나, <code>직급=비율</code> <textarea id="hrRates" rows="4" placeholder="P1=18&#10;P2=20&#10;P3=22&#10;P4=24"></textarea></label>
       <label>기본연봉 항목명 (지급내역 소득명) <input type="text" id="hrBaseItem" placeholder="기본연봉"></label>
       <label>연구수당 항목명 (지급내역 소득명) <input type="text" id="hrResearchItem" placeholder="연구수당지급"></label>
-      <label class="wide">HR System 링크 <input type="url" id="hrUrl"></label>
+      <label class="wide">HR System 링크 (eClass 홈 HR › Main Page 가 여는 SSO 중계 주소. hr.krs.co.kr 를 직접 넣으면 로그아웃 상태에서 403 이라 자동 로그인이 안 됨) <input type="url" id="hrUrl"></label>
     </div>
     <div class="row">
       <button type="button" id="btnHrCollect" class="btn">HR 탭에서 지금 수집</button>

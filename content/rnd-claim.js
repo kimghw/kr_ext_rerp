@@ -6,6 +6,7 @@
  *  4) eClass 패널에서 미리 고른 청구종류·적은 청구내역(적요)·첨부 파일(청구 준비, lib/prep.js)이 있는 거래(주소의 krext_appr)면 행 선택 뒤 세목·청구종류를 고르고 청구내역을 적고 파일을 올리며,
  *     krext_auto=add(패널의 "청구서 작성", 백그라운드 탭)이면 "내역 추가"까지, add,apply("작성+신청")면 이어서 결의서 "신청"(결재요청)까지, apply("신청", krext_prep)면 저장된 결의서의 신청만,
  *     delete("임시저장 삭제", krext_prep)면 내역 추가된 청구내역 행의 [삭제]를 눌러 결과를 백그라운드에 보고한다 (아래 "청구 준비"·"신청"·"임시저장 삭제" 구역).
+ *     저장된 결의서를 여는 모드(신청만·삭제)는 먼저 결의서 승인구분(hidden #APPR_DIV_CD)을 읽어 이미 신청·승인된 결의서(10/20/50/60)면 실패가 아니라 "신청됨"(applied)으로 보고한다 — 패널 상태가 ERP 와 어긋난 경우(화면에서 직접 신청 등).
  * 화면 요소는 ID 를 모르므로 라벨 문구("예산", "RCMS 부가정보", "첨부문서", "청구")로 찾는다. 값은 비어 있을 때만 채운다
  * (예외: 청구내역 칸은 고정 ID #REQ_PTCL 로 찾고, 패널에 적은 청구내역은 이 거래에 대한 명시적 입력이라 화면 기본값(카드 메모)을 덮어쓴다).
  * 설정 claimHelper(설정 페이지 "청구서(카드) 입력 도우미")로 켜고 끈다. */
@@ -1045,9 +1046,11 @@
     setSt('apply', '청구내역 목록 확인 중…');
     await waitList(hasStep('add') ? 12000 : 25000);
     if (stopped) return;
+    const slip = slipStatus();
+    if (slip.locked) { setSt('apply', `이미 ${slip.nm || '신청'} 상태입니다`); report('applied', `${lockedMsg(slip)} — 다시 신청할 필요가 없습니다`, prepSaved || {}); return; }   // 화면에서 직접 신청했거나 지난 신청 보고를 놓친 경우
     if (!listRows().length) { setSt('apply', '신청할 청구내역이 없습니다', true); report('failed', '신청할 청구내역이 없습니다 (결의서가 비어 있음)'); return; }
     const btn = document.getElementById('btn_apprProc');
-    if (!btn || !visible(btn)) { setSt('apply', '"신청" 버튼이 없습니다', true); report('failed', '"신청" 버튼이 없습니다 (이미 신청된 결의서이거나 신청할 수 없는 상태)'); return; }
+    if (!btn || !visible(btn)) { setSt('apply', '"신청" 버튼이 없습니다', true); report('failed', `"신청" 버튼이 없습니다 (승인구분 ${slip.nm || slip.cd || '없음'} — 신청할 수 없는 상태)`); return; }
     setSt('apply', '신청 중…');
     autoApply(150000);
     prepAlerts = []; overlapClicked = false; seenSvc = [];
@@ -1084,8 +1087,20 @@
    * confirm("결의 내역의 모든 정보가 삭제됩니다.\n삭제하시겠습니까?") → rtask_0008_t04_01_d001(결의서 전체 삭제) 뒤 top.jex.tabs.close 로 이 화면 탭이 닫힘,
    * 아니면 confirm("해당 청구내역을 삭제하시겠습니까?") → rexpe_0001_01_d001 {USEFAC_SEQ_NO, REQ_SEQ_NO, TAX_CTRL_YN}. (도서 23 은 엑셀 다운로드 confirm 이 먼저 — 취소해도 삭제는 이어짐)
    * 행은 table#newExpList 의 tr(id = REQ_SEQ_NO, hidden .REQ_SEQ_NO_REC)에서 내역 추가 때 받은 청구번호(run.reqNo)로 찾는다. 저장된 결의서는 background prepRun 이 주소에 REQ_CNT(run.reqCnt)·APPR_DIV_CD=40 을
-   * 붙여 연다 — PRJ_NO 만 주면 새 결의서 폼(hidden REQ_CNT 빈값, 목록 0건)이라 행이 없다(2026-09-25 CDP 확인). 결과는 삭제 서비스 응답, 또는 화면 탭이 닫혀(pagehide) 이 프레임이 사라지면 성공으로 본다 */
+   * 붙여 연다 — PRJ_NO 만 주면 새 결의서 폼(hidden REQ_CNT 빈값, 목록 0건)이라 행이 없다(2026-09-25 CDP 확인). 결과는 삭제 서비스 응답, 또는 화면 탭이 닫혀(pagehide) 이 프레임이 사라지면 성공으로 본다.
+   * 화면은 결의서 승인구분(APPL_LIST.APPR_DIV_CD)이 10 신청·20 승인이면 행에 [삭제] 링크를 아예 그리지 않고(부가세 청구건 BASIC_REQ_SEQ_NO 가 있는 행도) "신청" 버튼도 감추므로, 링크를 찾기 전에 승인구분을 읽어
+   * 이미 신청·승인된 결의서면 "신청됨"(applied)으로 보고한다 — 패널이 임시저장으로 알고 있던 결의서를 화면에서 직접 신청한 경우(2026-09-25: "[삭제] 링크가 없습니다" 로만 실패해 원인을 알 수 없었음) */
   const slipCnt = () => String(((document.getElementById('REQ_CNT') || {}).value) || '').trim();   // 화면 hidden 의 결의서 차수 (주소 REQ_CNT 를 서버가 렌더. 새 결의서 폼이면 빈값)
+  /* 결의서 승인구분(RD0039): 10 신청 · 20 승인 · 30 보완요청 · 40 임시저장(작성중) · 50/60 (화면이 신청·승인처럼 잠그는 상태). hidden #APPR_DIV_CD 는 처음엔 주소 파라미터(40)가 렌더된 초기값이고,
+   * 화면이 결의서 정보를 받으면(fn_selApprResult) 실제 값으로 덮어쓰며 td#APPR_DIV_NM 에 이름, td#APPL_INFO 에 신청정보(차수·신청일·신청자·문서번호)를 쓴다. 청구내역 목록(r018)은 그 뒤에 그려지므로
+   * waitList 뒤에 읽는다 (2026-09-25 CDP: 40 → 약 3.6초 뒤 10 "신청" → 행 표시) */
+  const SLIP_LOCKED = ['10', '20', '50', '60'];
+  const slipStatus = () => {
+    const cd = hidVal('APPR_DIV_CD');
+    const text = (sel) => ((document.querySelector(sel) || {}).textContent || '').replace(/\s+/g, ' ').trim();
+    return { cd, nm: text('td#APPR_DIV_NM'), info: text('td#APPL_INFO'), locked: SLIP_LOCKED.includes(cd) };
+  };
+  const lockedMsg = (s) => `이미 신청된 결의서입니다 (승인구분 ${s.nm || s.cd}${s.info ? ' · 신청정보 ' + s.info : ''})`;
   const rowByReqNo = (reqNo) => {
     if (!reqNo) return null;
     const byId = document.getElementById(reqNo);
@@ -1105,11 +1120,13 @@
       if (stopped) return;
       const curCnt = slipCnt();
       if (!curCnt) { setSt('del', '새 결의서 폼으로 열려 목록이 비어 있습니다', true); report('failed', '청구서 화면이 저장된 결의서가 아니라 새 결의서 폼으로 열렸습니다(주소에 REQ_CNT 없음) — 탭에서 확인하세요'); return; }
+      const slip = slipStatus();
+      if (slip.locked) { setSt('del', `${slip.nm || '신청'} 상태라 삭제할 수 없습니다`, true); report('applied', `${lockedMsg(slip)} — 삭제하려면 R&D ERP 에서 신청 취소 후`, { reqNo, reqCnt: curCnt }); return; }
       if (!reqNo) { setSt('del', '청구번호를 몰라 삭제할 행을 찾지 못했습니다', true); report('failed', '이 항목의 청구번호가 기록돼 있지 않아 삭제할 청구내역 행을 찾지 못했습니다 — 탭의 청구내역 목록에서 [삭제]를 직접 누르세요'); return; }
       const row = rowByReqNo(reqNo);
       if (!row) { setSt('del', `청구번호 ${reqNo} 행이 없습니다`, true); report('failed', `청구내역 목록(결의서 ${curCnt}차)에 청구번호 ${reqNo} 행이 없습니다 (이미 삭제됐거나 다른 결의서) — 탭에서 확인하세요`); return; }
       const link = row.querySelector('a.DelLnk_Rec') || Array.from(row.querySelectorAll('a')).find((a) => /삭제/.test(a.textContent || ''));
-      if (!link) { setSt('del', '[삭제] 링크가 없습니다', true); report('failed', '그 행에 [삭제] 링크가 없습니다 (신청·승인된 결의서이거나 부가세 청구건)'); return; }
+      if (!link) { setSt('del', '[삭제] 링크가 없습니다', true); report('failed', `그 행에 [삭제] 링크가 없습니다 (승인구분 ${slip.nm || slip.cd || '없음'} — 부가세 청구건이거나 화면이 삭제를 허용하지 않는 상태)`); return; }
       setSt('del', '삭제 중…');
       autoDelete(60000);
       prepAlerts = [];

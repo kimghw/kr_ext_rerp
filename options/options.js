@@ -567,7 +567,7 @@
     if (hp.empNo) parts.push(`사번 ${hp.empNo}${hp.name ? ' ' + hp.name : ''}${hp.dept ? ' ' + hp.dept : ''}`);
     if (hp.ts) parts.push(`${F.fmtClock(hp.ts)} 수집`);
     if (hp.scan && hp.scan.note) parts.push(hp.scan.note);
-    if (hp.status && hp.status.loginRequired) parts.push('HR System 로그인이 풀려 갱신 못 함');
+    if (hp.status && hp.status.loginRequired) parts.push(hp.status.eclassLogin ? 'eClass 로그인이 풀려 HR 자동 로그인 못 함' : 'HR System 로그인이 풀려 갱신 못 함');
     else if (hp.status && hp.status.error) parts.push(`오류: ${hp.status.error}`);
     $('hrInfo').textContent = parts.join(' · ');
     $('hrSummary').textContent = on ? `${year}년 ${n}개월 수집${hp.grade ? ` · ${hp.grade}` : ''}` : '사용 안 함';
@@ -578,8 +578,9 @@
     setStatus('hrStatus', 'HR System 급여명세서를 읽는 중…');
     let r = null;
     try { r = await chrome.runtime.sendMessage({ type: 'hrCollectNow', all: true }); } catch (e) { r = null; }
-    if (r && r.ok) setStatus('hrStatus', `수집했습니다 (${r.via === 'tab' ? 'HR 탭에서' : '백그라운드 직접 호출'}) — ${r.scan ? `급여 ${r.months || 0}건 중 지급내역 ${r.scan.done}건 읽음` : ''}${r.grade ? ` · 직급 ${r.grade}` : ' · 직급 없음'}`);
-    else if (r && r.loginRequired) setStatus('hrStatus', 'HR System 로그인이 풀려 있습니다. HR System 에 로그인하면 자동으로 다시 수집됩니다.', true);
+    if (r && r.ok) setStatus('hrStatus', `수집했습니다 (${r.via === 'tab' ? 'HR 탭에서' : '백그라운드 직접 호출'}${r.autoLogin ? `, 자동 로그인 ${r.autoLogin === 'fetch' ? '백그라운드 SSO' : 'SSO 탭'}` : ''}) — ${r.scan ? `급여 ${r.months || 0}건 중 지급내역 ${r.scan.done}건 읽음` : ''}${r.grade ? ` · 직급 ${r.grade}` : ' · 직급 없음'}`);
+    else if (r && r.eclassLogin) setStatus('hrStatus', 'eClass 로그인이 풀려 있어 HR System 자동 로그인(SSO)을 못 했습니다. eClass 에 로그인한 뒤 다시 누르세요.', true);
+    else if (r && r.loginRequired) setStatus('hrStatus', `HR System 로그인이 풀려 있습니다${r.tabOpened ? ' (자동 로그인 실패)' : ''}. 위 HR System 링크(eClass SSO)로 로그인한 뒤 다시 누르세요.`, true);
     else if (r && r.skipped) setStatus('hrStatus', `건너뜀: ${r.skipped}`, true);
     else setStatus('hrStatus', (r && r.error) ? `수집 실패: ${r.error}` : '응답 없음', true);
     showHr();

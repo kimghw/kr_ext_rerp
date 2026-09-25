@@ -334,6 +334,7 @@ tr.krext-prep-over .krext-prep-drop { border-color: #4d8fe6; color: #245fbd; bac
 .krext-prep-state.krext-err { color: #b3261e; white-space: normal; }
 .krext-prep-state.krext-prep-running { color: #245fbd; }
 .krext-prep-state.krext-prep-saved { color: #222; }         /* 내역 추가(임시저장)만 됨 — 신청 필요. 검정 글자, "신청 필요"만 굵게 */
+.krext-panel a.krext-prep-applied { color: #1a7f37; }         /* 신청됨 — 클릭하면 MY신청함(내가 올린 신청 목록) */
 .krext-prep-state.krext-prep-saved b { color: #222; }
 .krext-prep-btn { height: 22px; padding: 0 8px; border: 1px solid #c9d1dc; border-radius: 5px; background: #fff; color: #1a5fb4; font-family: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
 .krext-prep-btn:hover:not(:disabled) { background: #eef3fa; border-color: #b7cdf0; }
@@ -348,10 +349,20 @@ tr.krext-prep-over .krext-prep-drop { border-color: #4d8fe6; color: #245fbd; bac
 .krext-cards tr.krext-prep-has td { border-bottom: 0; }
 /* 신청 대기 목록 (render.js pendingBlock): 내역 추가(임시저장)가 끝나 미청구 목록에서 빠진 거래 — 상태와 "신청" 버튼. 카드미청구 구역 맨 아래 */
 .krext-pend { margin: 10px 0 2px; padding: 6px 8px; border: 1px solid #e3ddf7; border-radius: 8px; background: #f8f6ff; font-size: 11px; color: #4b5563; }
-.krext-pend-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 700; color: #4a3d8f; margin-bottom: 2px; cursor: help; }
+.krext-pend-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 700; color: #4a3d8f; margin-bottom: 2px; }
+.krext-panel .krext-pend-head a { color: inherit; display: inline-flex; align-items: center; gap: 6px; }   /* 신청 필요 → 미신청내역조회, 신청됨 → MY신청함 */
 .krext-badge-soft { background: #fbe3e6; color: #a8323f; }   /* 신청 대기 건수: 빨간 배지의 연한 판 */
 .krext-pend-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 0 3px; border-top: 1px solid #ebe6fa; }
 .krext-pend-prj { font-weight: 600; color: #222; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .krext-pend-shop { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .krext-pend-amt { font-weight: 700; color: #222; font-variant-numeric: tabular-nums; }
 @media (max-width: 900px) { .krext-panel.krext-float { width: calc(100vw - 32px); right: 16px; } }
+
+/* 받은 결재요청 목록 (미승인내역 구역의 결재 칸 아래): 신청자 · 업무구분/과제 · 금액 · 대표적요 */
+.krext-inbox { margin-top: 6px; border-top: 1px solid #e1e6ee; }
+.krext-inbox-row { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; padding: 5px 4px; border-bottom: 1px dashed #e1e6ee; font-size: 12px; color: inherit !important; text-decoration: none !important; }
+.krext-inbox-row:hover { background: #eef3fa; }
+.krext-inbox-row b { color: #b3261e; white-space: nowrap; }
+.krext-inbox-what { flex: 1 1 120px; min-width: 0; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.krext-inbox-amt { margin-left: auto; font-weight: 700; white-space: nowrap; }
+.krext-inbox-cont { flex-basis: 100%; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

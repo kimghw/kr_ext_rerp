@@ -33,11 +33,18 @@
         const m = /([가-힣A-Za-z]{2,20})\s*님[,\s]*(?:안녕하세요|반갑습니다)/.exec(document.body.innerText || '');
         if (m) userNm = m[1];
       }
+      // 부서코드: 메인 대시보드(rmain_0002_01) 인라인 스크립트의 jsonValue["DEPT_CD"] = "HER" (결재대기 수 조회 rmain_0002_01_r001 의 DEPT_CD — 화면 hidden·전역에는 없음, 2026-09-25 확인)
+      let deptCd = '';
+      for (const s of document.scripts) {
+        if (s.src) continue;
+        const m = /\["DEPT_CD"\]\s*=\s*['"]([^'"]+)['"]/.exec(s.textContent || '');
+        if (m) { deptCd = m[1].trim(); break; }
+      }
       if (!userId && !empNo && !userNm) return false;
-      const key = [userId, empNo, userNm].join('|');
+      const key = [userId, empNo, userNm, deptCd].join('|');
       if (key === lastKey) return true;
       lastKey = key;
-      send({ type: 'rndUser', user: { userId, empNo, userNm, page: location.pathname, ts: Date.now() } });
+      send({ type: 'rndUser', user: { userId, empNo, userNm, deptCd, page: location.pathname, ts: Date.now() } });
       return true;
     };
     attempt();

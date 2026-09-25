@@ -30,8 +30,10 @@ function updateBadge(data) {
       supplement = KRX_FMT.num(it['보완요청'] && it['보완요청'].count) || 0;
       apply = KRX_FMT.num(it['신청'] && it['신청'].count) || 0;
     }
-    // 승인 필요 건수(보완요청 + 신청)가 있으면 그 수를 빨간 배지로 우선 표시, 없으면 카드미청구 건수를 회색 배지로 표시
-    const pending = supplement + apply;
+    // 내가 결재해야 하는 건수(받은 결재요청 = 내 결재대기)가 있으면 그 수를 빨간 배지로 우선 표시, 없으면 카드미청구 건수를 회색 배지로 표시.
+    // 보완요청·신청(내가 올린 결의서의 상태)은 배지에 더하지 않는다 — 내가 올린 신청 1건이 결재할 일처럼 보였다는 요청(2026-09-25). 항목별 건수는 아이콘 툴팁에
+    const inbox = KRX_FMT.num(data.inbox && data.inbox.mine) || 0;   // 받은 결재요청(내 결재대기, rmain_0002_01_r001 USER_APPR_CNT)
+    const pending = inbox;
     if (pending > 0) {
       chrome.action.setBadgeText({ text: String(pending) });
       chrome.action.setBadgeBackgroundColor({ color: '#d7263d' });
@@ -39,7 +41,7 @@ function updateBadge(data) {
       chrome.action.setBadgeText({ text: cards > 0 ? String(cards) : '' });
       chrome.action.setBadgeBackgroundColor({ color: '#8a8f98' });
     }
-    chrome.action.setTitle({ title: `R&D ERP 현황 - 보완요청 ${supplement}건 · 신청 ${apply}건 · 카드미청구 ${cards}건` });
+    chrome.action.setTitle({ title: `R&D ERP 현황 - 보완요청 ${supplement}건 · 신청 ${apply}건 · 받은 결재요청 ${inbox}건 · 카드미청구 ${cards}건` });
   } catch (e) {}
 }
 
@@ -81,8 +83,11 @@ async function refresh(force, opts) {
         });
       }
       updateBadge(data);
-      // 청구 준비(패널에서 고른 청구종류·첨부 파일): 미청구 목록에서 사라진 거래의 항목은 7일 뒤, 신청까지 끝난 항목은 하루 뒤 정리 (lib/prep-store.js)
-      if (!data.loginRequired && !data.error && data.memberFilter !== 'no-id') { try { await KRX_PREP_STORE.cleanup(prepKeysOf(data)); } catch (e) {} }
+      // 청구 준비(패널에서 고른 청구종류·첨부 파일): 임시저장·신청 상태를 ERP 결의서 목록과 맞춘 뒤, 미청구 목록에서 사라진 거래의 항목은 7일 뒤, 신청까지 끝난 항목은 하루 뒤 정리 (lib/prep-store.js)
+      if (!data.loginRequired && !data.error && data.memberFilter !== 'no-id') {
+        try { await syncSlipStatus(settings); } catch (e) {}
+        try { await KRX_PREP_STORE.cleanup(prepKeysOf(data)); } catch (e) {}
+      }
       return data;
     }
   })().finally(() => { inflight = null; inflightFull = false; });
@@ -96,6 +101,48 @@ function prepKeysOf(data) {
   for (const p of data.projects || []) for (const c of p.cards || []) add(c);
   for (const card of (data.cards || []).concat(data.unattributed || [])) for (const t of card.txs || []) add(t);
   return keys;
+}
+
+/* 청구 준비 항목의 결의서 상태를 R&D ERP 와 맞춘다 — 내역 추가(임시저장)만 된 것으로 기록된 항목이 ERP 에서 이미 신청·승인됐으면(화면에서 직접 신청했거나 확장이 신청 보고를 놓친 경우) "신청됨"(applied)으로,
+ * 신청됨으로 기록된 항목이 ERP 에서 보완요청(30)·임시저장(40)으로 돌아왔으면 "임시저장됨"(saved)으로. 그래야 패널이 이미 신청된 결의서에 "신청"·"임시저장 삭제" 버튼을 보이지 않는다
+ * (2026-09-25: 화면에서 신청한 결의서를 패널이 임시저장으로 알고 "임시저장 삭제"를 실행해 "[삭제] 링크가 없습니다" 로 실패 — 화면은 승인구분 10/20 이면 [삭제] 링크를 그리지 않음).
+ * 과제정보 › 청구결의서 탭의 목록 rtask_0008_t04_01_r001 {USEFAC_SEQ_NO, PRJ_NO, SEARCH_GB1 '1'(신청일자), START_DATE, END_DATE, APPR_DIV_CD ''} → REC[{REQ_CNT, APPR_DIV_CD, APPR_DIV_NM, APPL_DT, DOC_NO, DRAFT_USER_NM, …}].
+ * 신청일자 검색이라 신청된 결의서만 나오고 임시저장(신청일 없음)은 나오지 않으므로, 목록에 없는 항목은 그대로 둔다(삭제된 것으로 보지 않음). 과제마다 한 번, 항목이 있는 과제만 조회한다.
+ * 승인구분(RD0039): 10 신청 · 20 승인 · 30 보완요청 · 40 임시저장(작성중) · 50/60 (화면이 신청·승인처럼 잠그는 상태) */
+const SLIP_LOCKED = ['10', '20', '50', '60'];
+async function syncSlipStatus(settings) {
+  const m = await KRX_PREP_STORE.loadMeta();
+  const byPrj = new Map();   // prjNo → [{ key, run }]
+  for (const e of Object.values(m)) {
+    const r = e && e.run;
+    if (!r || r.state === 'running' || !wasSaved(r) || !String(r.reqCnt || '').trim() || !e.prjNo) continue;
+    if (!byPrj.has(e.prjNo)) byPrj.set(e.prjNo, []);
+    byPrj.get(e.prjNo).push({ key: e.key, run: r });
+  }
+  if (!byPrj.size) return;
+  const adv = (settings && settings.adv) || {};
+  const day = 86400000;
+  const fmtYmd = (v) => { const d = String(v || '').replace(/\D/g, ''); return d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}` : String(v || ''); };
+  for (const [prjNo, items] of byPrj) {
+    const oldest = Math.min(...items.map((x) => Number(x.run.ts) || Date.now()));
+    let recs = [];
+    try {
+      const d = await KRX_API.call('rtask_0008_t04_01_r001', { USEFAC_SEQ_NO: adv.usefacSeqNo || '10', PRJ_NO: prjNo, SEARCH_GB1: '1',
+        START_DATE: KRX_FMT.ymd(new Date(oldest - 7 * day)), END_DATE: KRX_FMT.ymd(new Date(Date.now() + day)), APPR_DIV_CD: '', PARAM_LST1: '', RES_CD: '', EXP_CD: '', DETAIL_CONT: '', DOC_NO: '' });
+      recs = Array.isArray(d && d.REC) ? d.REC : [];
+    } catch (e) { continue; }   // 로그인·네트워크 오류면 이번엔 건너뜀
+    for (const { key, run } of items) {
+      const rec = recs.find((r) => String(r.REQ_CNT || '').trim() === String(run.reqCnt).trim());
+      if (!rec) continue;
+      const cd = String(rec.APPR_DIV_CD || '').trim(), nm = String(rec.APPR_DIV_NM || '').trim() || cd;
+      const where = `승인구분 ${nm}${rec.APPL_DT ? ' · 신청일 ' + fmtYmd(rec.APPL_DT) : ''}${rec.DOC_NO ? ' · ' + rec.DOC_NO : ''}`;
+      if (SLIP_LOCKED.includes(cd) && run.state !== 'applied') {
+        await KRX_PREP_STORE.setRun(key, Object.assign({}, run, { state: 'applied', stage: '', ts: Date.now(), msg: `R&D ERP 에서 신청됨 (${where})`, saved: true }));
+      } else if ((cd === '30' || cd === '40') && run.state === 'applied') {
+        await KRX_PREP_STORE.setRun(key, Object.assign({}, run, { state: 'saved', stage: '', ts: Date.now(), msg: `R&D ERP 에서 신청이 취소되어 다시 작성중 (${where})`, saved: true }));
+      }
+    }
+  }
 }
 
 /* 청구 준비 "청구서 작성" / "작성+신청" / "신청": R&D ERP 청구서(카드) 화면을 비활성 탭으로 열어(레이아웃 딥링크 #krext, rnd-hook.js) 그 거래 행을 자동 선택하고,
@@ -146,6 +193,7 @@ async function prepRun(key, mode) {
 }
 /* rnd-claim.js 의 보고 { key, appr, state: saved|applied|deleted|failed, final, msg, alerts, saved, reqNo, reqCnt }. 이전 버전(0.6.9)의 { ok } 만 있는 보고도 받는다.
  * deleted(임시저장 삭제됨): run 을 지워 준비 항목을 작성 전 상태로 돌리고 미청구 목록을 다시 조회한다(거래가 돌아옴).
+ * applied 는 신청 성공뿐 아니라 신청만·삭제 모드에서 결의서가 이미 신청·승인된 상태로 확인된 경우에도 온다(msg 에 승인구분·신청정보) — 패널은 "신청됨"으로 바꾸고 버튼을 감춘다.
  * run = { state: running|saved|applied|failed, stage(running 일 때 add|apply), mode, ts, tabId, msg, saved(내역 추가는 됨), reqNo(청구번호), reqCnt(결의서 차수) } */
 async function prepRunResult(msg, sender) {
   const tabId = sender && sender.tab && /rnd\.krs\.co\.kr/.test(String(sender.tab.url || '')) ? sender.tab.id : null;   // 닫을 탭은 R&D ERP 탭일 때만 (다른 곳에서 온 보고로 그 탭을 닫지 않게)
@@ -265,40 +313,66 @@ async function ensureHrRules() {
  * 주기적으로 돌지 않고, 패널의 급여·연구수당 보기/↻ 나 설정 페이지의 지금 수집(hrCollectNow)을 눌렀을 때만 읽는다 (급여는 한 달에 한 번 바뀌므로).
  * force 가 아니면 저장값이 갱신 주기 안일 때 건너뜀, all 이면 모든 달을 다시 읽음 (아니면 목록만 다시 받고 새로 생기거나 소득합계가 바뀐 달만 지급내역 조회).
  * 사번: 저장된 hrPay.empNo → R&D ERP 사용자(rndUser) → 설정 myEmpNo. 사번을 모르거나 직접 호출이 실패하면(빈 응답 등) 열려 있는 HR 탭에 맡긴다.
- * 로그인이 풀려 있으면(로그인 페이지로 리다이렉트) 탭도 같은 쿠키라 소용없으므로, 설정 hr.autoLogin 이 켜져 있으면 hrAutoLogin 으로 HR 메인을 열어 SSO 자동 로그인 뒤 한 번 더 읽고,
- * 그래도 안 되면 status.loginRequired(+tabOpened) 로 기록한다 */
-/* HR 로그인이 풀렸을 때 자동 재로그인: HR 메인 페이지를 열면 SSO 로 자동 로그인되므로, 비활성 탭으로 열고(이미 HR 탭이 있으면 그 탭을 그 주소로 이동)
- * hr.krs.co.kr 로 돌아와 다 뜰 때까지 기다린 뒤 tryCollect 로 다시 읽는다. HR 은 SPA 라 주소만으로는 로그인 여부를 알 수 없어 API 응답으로 판단하고,
- * 아직 로그인 리다이렉트면 2초 간격으로 제한 시간까지 재시도한다. 성공하면 이 함수가 연 탭은 닫고, 안 되면 탭을 그대로 두어 사용자가 거기서 로그인할 수 있게 한다(tabOpened).
- * 반환: 성공 시 tryCollect 의 결과, 실패 시 { ok:false, error, kind, tabOpened } */
+ * 로그인이 풀려 있으면(로그인 페이지로 리다이렉트) 탭도 같은 쿠키라 소용없으므로, 설정 hr.autoLogin 이 켜져 있으면 hrAutoLogin 으로 eClass SSO 를 거쳐 다시 로그인한 뒤 한 번 더 읽고,
+ * 그래도 안 되면 status.loginRequired(+eclassLogin: eClass 세션이 없어 SSO 를 못 함, +tabOpened) 로 기록한다 */
+/* HR 로그인이 풀렸을 때 자동 재로그인 (SSO).
+ * hr.krs.co.kr/ 을 직접 열면 로그아웃 상태에서는 SSO 로 넘어가지 않고 본문 없는 403(Chrome 오류 페이지)만 오므로 (2026-09-25 확인) 그 주소로는 로그인이 안 된다.
+ * 실제 SSO 진입은 eClass 홈 메뉴 HR › Main Page 가 여는 중계 페이지(hr.url 기본값 KRX_HR_API.SSO_URL, 제목 "SSO Redirect")로, 이 페이지의 인라인 JS 가
+ * https://hr.krs.co.kr/sso-proc?UID=…&SID=… 로 이동하면 HR 세션이 만들어진다. eClass 세션(쿠키)이 필요하고 GET 이라 백그라운드에서도 받을 수 있다.
+ *  1) hrUrl 이 eClass 중계 주소면 백그라운드에서 받아 sso-proc 주소를 뽑는다. 못 뽑으면(eClass 로그인 페이지 등) kind:'eclass-login' 으로 끝낸다 (탭을 열지 않음).
+ *  2) sso-proc 를 백그라운드에서 fetch(쿠키 포함, 리다이렉트 따라감) 해 HR 세션을 만든 뒤 tryCollect 로 바로 읽어 본다 — 되면 탭 없이 끝 (autoLogin:'fetch').
+ *  3) 안 되면 hrUrl 을 비활성 탭으로 열고(이미 HR 탭이 있으면 그 탭을 그 주소로 이동. 중계 페이지가 새 sso-proc 로 이동한다) hr.krs.co.kr 로 돌아와 다 뜰 때까지 기다린 뒤
+ *     tryCollect 로 다시 읽는다. HR 은 SPA 라 주소만으로는 로그인 여부를 알 수 없어 API 응답으로 판단하고, 아직 로그인 리다이렉트면 2초 간격으로 제한 시간까지 재시도한다.
+ *     성공하면 이 함수가 연 탭은 닫고, 안 되면 탭을 그대로 두어 사용자가 확인할 수 있게 한다(tabOpened).
+ * 반환: 성공 시 tryCollect 의 결과(+autoLogin:'fetch'|'tab'), 실패 시 { ok:false, error, kind, tabOpened } */
 const HR_AUTO_LOGIN_MS = 30000;
+/* eClass SSO 중계 페이지를 받아 HR sso-proc 주소를 돌려준다. 없으면 kind:'eclass-login'(eClass 세션 없음), 못 받으면 'network' */
+async function fetchHrSsoUrl(bridgeUrl) {
+  let res, text = '';
+  try { res = await fetch(bridgeUrl, { credentials: 'include', cache: 'no-store', redirect: 'follow' }); text = await res.text(); }
+  catch (e) { const err = new Error('eClass SSO 중계 페이지를 받지 못했습니다: ' + String((e && e.message) || e)); err.kind = 'network'; throw err; }
+  const m = text.match(KRX_HR_API.SSO_PROC_RE);
+  if (m) return m[0].replace(/&amp;/g, '&');
+  const err = new Error(`eClass 로그인이 풀려 HR 자동 로그인(SSO)을 못 했습니다 (중계 페이지 HTTP ${res.status}${res.redirected ? ' → ' + res.url : ''})`);
+  err.kind = 'eclass-login'; throw err;
+}
 async function hrAutoLogin(hrUrl, tryCollect) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  let tab = null, created = false;
+  const fail = (kind, error, extra) => Object.assign({ ok: false, kind, error }, extra || {});
+  if (KRX_HR_API.isSsoBridge(hrUrl)) {   // 1) 2) 탭 없이 백그라운드에서
+    let proc = null;
+    try { proc = await fetchHrSsoUrl(hrUrl); }
+    catch (e) { if (e && e.kind === 'eclass-login') return fail(e.kind, e.message); }   // 네트워크 오류 등은 탭으로 다시 시도
+    if (proc) {
+      try { await fetch(proc, { credentials: 'include', cache: 'no-store', redirect: 'follow' }); } catch (e) {}
+      try { return Object.assign(await tryCollect(), { autoLogin: 'fetch' }); }
+      catch (e) { if (!(e && e.kind === 'login')) return fail(e.kind || 'error', String((e && e.message) || e)); }
+    }
+  }
+  let tab = null, created = false;   // 3) 탭으로
   try {
     const open = await chrome.tabs.query({ url: ['https://hr.krs.co.kr/*'] });
     if (open && open.length) { tab = open[0]; await chrome.tabs.update(tab.id, { url: hrUrl }); }
     else { tab = await chrome.tabs.create({ url: hrUrl, active: false }); created = true; }
-  } catch (e) { return { ok: false, kind: 'login', error: 'HR System 탭을 열지 못했습니다: ' + String((e && e.message) || e) }; }
+  } catch (e) { return fail('login', 'HR System 탭을 열지 못했습니다: ' + String((e && e.message) || e)); }
   const deadline = Date.now() + HR_AUTO_LOGIN_MS;
   let landed = false, lastErr = null;
   while (Date.now() < deadline) {
     await sleep(landed ? 2000 : 500);
     let t = null;
-    try { t = await chrome.tabs.get(tab.id); } catch (e) { return { ok: false, kind: 'login', error: 'HR System 탭이 닫혀 자동 로그인을 끝내지 못했습니다' }; }
-    if (!landed) {   // SSO 가 다른 사이트를 거치는 동안(url 을 볼 수 없음)은 기다리고, HR 로 돌아와 로딩이 끝나면 잠시 뒤 읽기 시작
+    try { t = await chrome.tabs.get(tab.id); } catch (e) { return fail('login', 'HR System 탭이 닫혀 자동 로그인을 끝내지 못했습니다'); }
+    if (!landed) {   // SSO 가 eClass 를 거치는 동안은 기다리고, HR 로 돌아와 로딩이 끝나면 잠시 뒤 읽기 시작
       if (t.status !== 'complete' || !/^https:\/\/hr\.krs\.co\.kr\//i.test(String(t.url || ''))) continue;
       landed = true; await sleep(1500);
     }
     try {
       const r = await tryCollect();
       if (created) { try { await chrome.tabs.remove(tab.id); } catch (e) {} }
-      return r;
+      return Object.assign(r, { autoLogin: 'tab' });
     } catch (e) { lastErr = e; if (!(e && e.kind === 'login')) break; }
   }
   const kind = (lastErr && lastErr.kind) || 'login';
-  return { ok: false, kind, tabOpened: true,
-    error: kind === 'login' ? 'HR System 자동 로그인이 되지 않았습니다' : String((lastErr && lastErr.message) || lastErr) };
+  return fail(kind, kind === 'login' ? `HR System 자동 로그인이 되지 않았습니다${landed ? '' : ' (SSO 중계 페이지에서 HR 로 넘어가지 못함)'}` : String((lastErr && lastErr.message) || lastErr), { tabOpened: true });
 }
 
 let hrInflight = null;
@@ -326,18 +400,19 @@ async function collectHr(force, all) {
     try { return await tryCollect(); }
     catch (e) {
       let kind = e && e.kind, msg = String((e && e.message) || e), tabOpened = false;
-      if (kind === 'login' && hr.autoLogin !== false) {   // 로그인이 풀림 → HR 메인을 비활성 탭으로 열어 SSO 자동 로그인 뒤 다시 읽기 (hrAutoLogin)
-        const re = await hrAutoLogin(hr.url || KRX_HR_API.HOME + '/', tryCollect);
-        if (re.ok) return Object.assign(re, { autoLogin: true });
+      if (kind === 'login' && hr.autoLogin !== false) {   // 로그인이 풀림 → eClass SSO 중계 주소(hr.url)로 자동 로그인 뒤 다시 읽기 (hrAutoLogin)
+        const re = await hrAutoLogin(hr.url || KRX_HR_API.SSO_URL, tryCollect);
+        if (re.ok) return re;
         kind = re.kind || kind; msg = re.error || msg; tabOpened = !!re.tabOpened;
       }
-      if (kind !== 'login') {   // 빈 응답(규칙 미적용)·네트워크·HTTP 오류 → HR 탭이 있으면 그쪽에서 (탭은 프로필의 사번으로 다시 시도)
+      const loginKind = kind === 'login' || kind === 'eclass-login';
+      if (!loginKind) {   // 빈 응답(규칙 미적용)·네트워크·HTTP 오류 → HR 탭이 있으면 그쪽에서 (탭은 프로필의 사번으로 다시 시도)
         const viaTab = await requestHrCollect(force, all);
         if (viaTab.ok) return viaTab;
       }
-      const status = { ts: Date.now(), error: msg, loginRequired: kind === 'login', tabOpened, via: 'background' };
+      const status = { ts: Date.now(), error: msg, loginRequired: loginKind, eclassLogin: kind === 'eclass-login', tabOpened, via: 'background' };
       const merged = await mergeHrPay({ status }); await patchCacheHrPay(merged);
-      return { ok: false, via: 'background', error: msg, loginRequired: status.loginRequired, tabOpened };
+      return { ok: false, via: 'background', error: msg, loginRequired: status.loginRequired, eclassLogin: status.eclassLogin, tabOpened };
     }
   })().finally(() => { hrInflight = null; });
   return hrInflight;
@@ -346,7 +421,7 @@ async function collectHr(force, all) {
 /* HR 급여명세서 수집(content/hr-pay.js → lib/hr-api.js) 병합 → storage.local.hrPay
  * { ts(마지막 성공 수집), source:'api', page, empNo, name, dept, grade(P1~P4, HR 직원 정보의 gradeCode), gradeTs,
  *   years: { [연도]: { months: { [지급일자|내용]: { date, title, seq, total, detailTotal, mismatch, items:{소득명: 금액}, order, codes, ts } }, list: { ts, total, rows } } },
- *   scan: { ts, years, tried, done, failed, note }, status: { ts, ok | error, loginRequired } }
+ *   scan: { ts, years, tried, done, failed, note }, status: { ts, ok | error, loginRequired, eclassLogin, tabOpened } }
  * API 는 한 해의 목록 전체를 주므로 목록은 통째로 교체하고 목록에 없는 달(예전 화면 읽기 잔재)은 지운다. 달은 key 로 덮어쓴다. 3년 넘은 연도는 정리 */
 async function mergeHrPay(patch) {
   const cur = (await chrome.storage.local.get('hrPay')).hrPay || { years: {} };
@@ -426,7 +501,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const userId = u.userId || prev.userId || '';
         let empNo = u.empNo || prev.empNo || '';
         if (empNo && userId && empNo !== userId) empNo = '';   // 이 ERP 의 사번은 USER_ID 와 같다. 다른 값은 이전 버전 bridge 가 화면의 대상자 EMP_NO 를 잘못 읽은 것이라 버린다
-        const next = { userId, empNo, userNm: u.userNm || prev.userNm || '', ts: Date.now() };
+        const next = { userId, empNo, userNm: u.userNm || prev.userNm || '', deptCd: u.deptCd || prev.deptCd || '', ts: Date.now() };   // deptCd: 대시보드 인라인 스크립트의 부서코드 (결재대기 수 조회 DEPT_CD)
         if (next.userId !== prev.userId || next.empNo !== prev.empNo || next.userNm !== prev.userNm) {
           await chrome.storage.local.set({ rndUser: next, membership: {} });   // 사용자가 바뀌면 참여 판정 캐시 초기화
         } else {

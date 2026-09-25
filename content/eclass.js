@@ -78,8 +78,16 @@
   const anchors = Array.from(document.querySelectorAll('a[href]'));
   const link = anchors.find((x) => /rnd\.krs\.co\.kr/i.test(x.href));
   state.rndUrl = link ? link.href : null;
-  const hrLink = anchors.find((x) => /hr\.krs\.co\.kr/i.test(x.href));   // 하단 HR System 열기 (없으면 설정의 HR System 링크)
-  state.hrUrl = hrLink ? hrLink.href : null;
+  // 하단 HR System 열기 (없으면 설정의 HR System 링크): eClass 홈 메뉴 HR › Main Page 는 href 없이 onclick="openNewWindow('…/External/SSOMessage')" 로 SSO 중계 페이지를 연다 (PGMID 가 붙은 것은 HR 하위 화면)
+  const hrLink = anchors.find((x) => /hr\.krs\.co\.kr|\/External\/SSOMessage/i.test(x.href));
+  let hrUrl = hrLink ? hrLink.href : null;
+  if (!hrUrl) {
+    for (const el of document.querySelectorAll('[onclick*="SSOMessage"]')) {
+      const m = (el.getAttribute('onclick') || '').match(/https?:\/\/[^'"\s)]*\/External\/SSOMessage(?:\?[^'"\s)]*)?/i);
+      if (m && !/PGMID=/i.test(m[0])) { hrUrl = m[0]; break; }
+    }
+  }
+  state.hrUrl = hrUrl;
 
   const draw = () => KRX_RENDER.render(host, state);
   KRX_PLAN.bind(host, state, draw);   // 과제집행비율 표의 예상 비용 입력(＋/수정/삭제) 처리
