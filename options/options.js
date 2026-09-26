@@ -373,6 +373,7 @@
     $('hideZeroProjects').checked = !!s.hideZeroProjects;
     $('projectStatusKeyword').value = s.projectStatusKeyword == null ? '진행' : s.projectStatusKeyword;
     $('rndUrl').value = s.rndUrl || '';
+    $('rndAutoLogin').checked = s.rndAutoLogin !== false;
     const ch = Object.assign({}, S.DEFAULTS.claimHelper, s.claimHelper || {});
     $('chEnabled').checked = ch.enabled !== false;
     $('chDefaultBudget').value = ch.defaultBudget || '';
@@ -453,6 +454,7 @@
       myEmpNo: $('myEmpNo').value.trim(),
       myName: $('myName').value.trim(),
       rndUrl: $('rndUrl').value.trim() || S.DEFAULTS.rndUrl,
+      rndAutoLogin: $('rndAutoLogin').checked,
       claimHelper: {
         enabled: $('chEnabled').checked,
         defaultBudget: $('chDefaultBudget').value.trim(),
@@ -573,6 +575,23 @@
     $('hrSummary').textContent = on ? `${year}년 ${n}개월 수집${hp.grade ? ` · ${hp.grade}` : ''}` : '사용 안 함';
   }
   $('hrEnabled').addEventListener('change', showHr);
+  // R&D ERP 자동 로그인(eClass SSO) 지금 시도 → 되면 캐시를 무시하고 다시 조회해 결과까지 보임
+  $('btnRndSso').addEventListener('click', async () => {
+    setStatus('rndSsoStatus', 'eClass SSO 로 R&D ERP 에 로그인하는 중…');
+    let r = null;
+    try { r = await chrome.runtime.sendMessage({ type: 'rndSsoLogin' }); } catch (e) { r = null; }
+    if (r && r.ok) {
+      setStatus('rndSsoStatus', `로그인했습니다 (${r.ms} ms). 다시 조회하는 중…`);
+      let d = null;
+      try { d = await chrome.runtime.sendMessage({ type: 'getData', force: true }); } catch (e) { d = null; }
+      if (d && d.loginRequired) setStatus('rndSsoStatus', 'SSO 는 됐지만 R&D ERP 가 여전히 로그인 필요라고 응답합니다. eClass 의 R&D ERP 메뉴로 로그인해 보세요.', true);
+      else if (d && d.error) setStatus('rndSsoStatus', `로그인했지만 조회 오류: ${d.error}`, true);
+      else setStatus('rndSsoStatus', `로그인하고 다시 조회했습니다 (SSO ${r.ms} ms${d && d.projectCount != null ? `, 과제 ${d.projectCount}건` : ''})`);
+    }
+    else if (r && r.kind === 'eclass-login') setStatus('rndSsoStatus', 'eClass 로그인이 풀려 있어 SSO 를 못 했습니다. eClass 에 로그인한 뒤 다시 누르세요.', true);
+    else setStatus('rndSsoStatus', (r && r.error) ? `자동 로그인 실패 (${r.kind}): ${r.error}` : '응답 없음', true);
+  });
+
   // 지금 수집 (백그라운드 직접 호출, 안 되면 열려 있는 HR 탭). 모든 달을 다시 읽는다
   $('btnHrCollect').addEventListener('click', async () => {
     setStatus('hrStatus', 'HR System 급여명세서를 읽는 중…');

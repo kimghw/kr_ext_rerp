@@ -8,7 +8,8 @@ eClass 홈(`https://eclass.krs.co.kr/eClassVer4/Home/Index`)에 R&D ERP(`https:/
 1. Chrome 주소창에 `chrome://extensions` 입력 → 우측 상단 **개발자 모드** 켜기
 2. **압축해제된 확장 프로그램을 로드합니다** → 이 폴더(`E:\dev\kr_ext_rerp`) 선택
 3. R&D ERP에 로그인된 상태(eClass에서 링크로 한 번 들어가 두면 됨)에서 eClass 홈을 열면 우측 상단에 패널이 뜹니다.
-   - 로그인 세션이 없으면 패널에 "R&D ERP 로그인이 필요합니다"가 표시됩니다. R&D ERP 주소를 바로 열면 세션이 만들어지지 않으니, 처음에는 eClass 화면의 R&D ERP 메뉴를 클릭해서 로그인한 뒤 ↻를 누르세요.
+   - 로그인 세션이 없으면 확장이 먼저 **eClass SSO 로 자동 로그인**을 시도합니다(0.7.2, 아래 "R&D ERP 자동 로그인"). eClass 에 로그인돼 있으면 탭 없이 바로 이어지고, eClass 도 풀려 있으면 패널에 "eClass 로그인 필요"가 표시됩니다 — eClass 에 로그인하면 다음 조회에서 자동으로 이어집니다.
+     자동 로그인을 껐거나 실패하면 "R&D ERP 로그인이 필요합니다"가 표시됩니다. R&D ERP 주소를 바로 열면 세션이 만들어지지 않으니, 그때는 eClass 화면의 R&D ERP 메뉴를 클릭해서 로그인한 뒤 ↻를 누르세요.
 
 ## 표시 내용
 
@@ -155,6 +156,20 @@ R&D ERP 의 카드 청구는 두 단계입니다: 청구서(카드) 화면에서
 - R&D ERP에는 저장하지 않고 이 브라우저(확장 저장소)에만 남습니다. 팝업과 eClass 패널에서 같은 목록을 씁니다.
 - 막대는 파랑이며 합계가 100%를 넘으면 빨강과 "100% 초과"로 표시합니다(집행비율 막대도 같은 규칙).
 
+## R&D ERP 자동 로그인 (eClass SSO)
+
+R&D ERP 세션(`rnd.krs.co.kr` 의 `JSESSIONID`)이 풀려 조회가 "로그인 필요"(`.jct` 응답 `GWM0001` 또는 로그인 페이지 HTML)로 끝나면, 설정 **R&D ERP 자동 로그인**(기본 켜짐, `rndAutoLogin`)이 켜져 있을 때
+`background.js` `rndAutoLogin` → `lib/rnd-api.js` `ssoLogin` 이 eClass 홈의 R&D ERP 아이콘이 하는 일을 백그라운드에서 그대로 재현한 뒤 한 번 더 조회합니다 (2026-09-26 CDP 로 실제 브라우저 흐름을 추적해 확인).
+
+- eClass 홈의 R&D ERP 아이콘(`mainCommon.rERP`)은 rERP 쪽 페이지 `https://rnd.krs.co.kr/jsp/rderp/main/sso_login_krs_view.jsp?SSO_PAGE_GB=A`(제목 "SSO RESULT", 세션 없이도 200)를 새 창으로 열고, 그 페이지의 스크립트가
+  1. eClass `https://eclass.krs.co.kr/intra/intranet/Main_N/json/loginCheck_json.aspx?callback=…` 를 JSONP 로 불러 `{ UID, SID }`(UID 30자 암호화 ID, SID 36자 eClass 세션 GUID)를 받고 (eClass 쿠키 필요. 둘 중 하나라도 비면 alert 뒤 eClass 로그인 페이지로 이동),
+  2. 같은 경로의 `sso_login_krs.jct` 에 `_JSON_` 이중 인코딩 `{UID, SID, SSO_PAGE_GB:"A"}` 로 POST → JSON `{ URL, COMMON_HEAD }` 와 함께 **새 `JSESSIONID`** 가 발급되며 (`.act` 로 보내면 JSON 이 아니라 view 페이지 HTML 이 돌아옴 — 반드시 `.jct`),
+  3. 그 `URL`(`rderp_layoutMain.act`)에 `SYS_LOGIN=Y&SSO_PAGE_GB=A` 를 폼 POST 하면 세션이 로그인 상태가 됩니다.
+- 확장은 1→2→3 을 `fetch(credentials:'include')` 로 보냅니다. rERP 는 Referer·Origin 을 보지 않아 확장 출처에서도 통하고, 탭을 열지 않으며 0.5초 안팎에 끝납니다. 새 쿠키는 브라우저가 관리하므로 열려 있는 ERP 탭도 함께 살아납니다. 비밀번호는 오가지 않고 UID·SID 는 저장하지 않습니다.
+- **언제**: 알람(갱신 주기)·패널/팝업 열기·↻ 등 모든 조회에서 결과가 로그인 필요일 때 한 번. "로그인 필요"로 끝난 캐시는 1분(`RND_SSO_RETRY_MS`) 뒤부터 다시 조회하므로, eClass 에 로그인하고 eClass 홈을 열면 패널이 바로 다시 로그인합니다. 설정 페이지의 **R&D ERP 자동 로그인 지금 시도** 버튼(`rndSsoLogin`)으로 바로 확인할 수 있습니다.
+- **안 되는 경우**: eClass 세션까지 끝났으면(loginCheck 가 빈 값) 캐시에 `eclassLogin` 으로 기록하고 패널·배지에 "eClass 로그인 필요"를 안내합니다 — eClass 에 한 번 로그인하면 다음 조회에서 이어집니다. 그 밖의 실패는 `autoLogin.error` 와 함께 예전 안내(eClass 의 R&D ERP 메뉴 클릭)를 보입니다. eClass 로그인 페이지는 건드리지 않고 자격증명도 저장하지 않습니다.
+- HR System 의 자동 로그인(아래 절, `hrAutoLogin`)과 같은 원칙이지만 경로가 다릅니다: HR 은 eClass 중계 페이지가 UID·SID 를 URL 에 실어 `hr.krs.co.kr/sso-proc` 로 보내고(GET 한 번), rERP 는 rERP 쪽 페이지가 eClass 에 되물어 받은 값을 POST 합니다(요청 세 번). eClass 가 HR 에 주는 UID 는 36자, rERP 에 주는 UID 는 30자로 서로 다릅니다.
+
 ## 급여·연구수당 (HR System 급여명세서)
 
 HR System(`hr.krs.co.kr`)은 R&D ERP 와 다른 사이트입니다. 패널의 **잔여연구수당 확인**을 누를 때(그리고 펼친 상태의 ↻) 백그라운드(`background.js` `collectHr`)가
@@ -214,8 +229,8 @@ HR 탭을 열어 둘 필요는 없고 HR 로그인 세션 쿠키가 살아 있�
 
 ```
 manifest.json          MV3 매니페스트
-background.js          서비스워커: 수집/캐시/배지/알람, 캡처 로그 저장
-lib/rnd-api.js         R&D ERP .jct 호출 (_JSON_ 이중 인코딩, EUC-KR 디코딩, 세션 오류 감지)
+background.js          서비스워커: 수집/캐시/배지/알람, 캡처 로그 저장, R&D ERP·HR 자동 로그인(rndAutoLogin·hrAutoLogin)
+lib/rnd-api.js         R&D ERP .jct 호출 (_JSON_ 이중 인코딩, EUC-KR 디코딩, 세션 오류 감지) + eClass SSO 재로그인(ssoLogin: loginCheck → sso_login_krs.jct → rderp_layoutMain.act)
 lib/render.js          패널 렌더러 (eClass 삽입 / 팝업 공용)
 lib/plan.js            과제집행비율 예상 비용(세목·수량·단가) 저장소 + 입력 처리 (storage.local.plannedExpenses)
 lib/pay.js             급여·연구수당의 받기 예정 연구수당(메모·금액) 저장소 + 입력 처리 (storage.local.plannedAllowance)

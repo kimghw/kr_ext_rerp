@@ -16,7 +16,9 @@ function updateBadge(data) {
     if (data.loginRequired) {
       chrome.action.setBadgeText({ text: '!' });
       chrome.action.setBadgeBackgroundColor({ color: '#8a8f98' });
-      chrome.action.setTitle({ title: 'R&D ERP 현황 - 로그인 필요 (eClass의 R&D ERP 메뉴를 클릭해서 로그인해주세요)' });
+      chrome.action.setTitle({ title: data.eclassLogin ? 'R&D ERP 현황 - eClass 로그인 필요 (eClass에 로그인하면 R&D ERP는 자동으로 다시 로그인합니다)'
+        : (data.autoLogin && !data.autoLogin.ok) ? `R&D ERP 현황 - 로그인 필요 (자동 로그인 실패: ${data.autoLogin.error || data.autoLogin.kind}) — eClass의 R&D ERP 메뉴를 클릭해서 로그인해주세요`
+        : 'R&D ERP 현황 - 로그인 필요 (eClass의 R&D ERP 메뉴를 클릭해서 로그인해주세요)' });
       return;
     }
     // 미승인내역(보완요청 + 신청)은 실시간값, 없으면 메인화면 방문 시 읽은 스냅샷
@@ -45,6 +47,21 @@ function updateBadge(data) {
   } catch (e) {}
 }
 
+/* R&D ERP 세션이 풀렸을 때(조회가 "로그인 필요"로 끝남) eClass SSO 로 다시 로그인 — KRX_API.ssoLogin (lib/rnd-api.js: eClass loginCheck 로 UID·SID → sso_login_krs.jct → rderp_layoutMain.act POST).
+ * 탭을 열지 않고 백그라운드 fetch 만으로 끝나며(0.5초 안팎), 새 JSESSIONID 는 브라우저 쿠키 저장소에 들어가므로 열려 있는 ERP 탭도 같이 살아난다. 비밀번호·UID·SID 는 저장하지 않는다.
+ * 동시 호출은 하나로 합친다. 반환 { ok:true, ts, ms, url } | { ok:false, ts, ms, kind, error } — kind 'eclass-login' 은 eClass 세션이 없어 사용자가 eClass 에 로그인해야 하는 경우 */
+const RND_SSO_RETRY_MS = 60000;   // "로그인 필요"로 끝난 캐시를 다시 조회(→ SSO 재시도)하기까지의 최소 간격
+let rndSsoInflight = null;
+async function rndAutoLogin() {
+  if (rndSsoInflight) return rndSsoInflight;
+  rndSsoInflight = (async () => {
+    const ts = Date.now();
+    try { const r = await KRX_API.ssoLogin(); return { ok: true, ts, ms: Date.now() - ts, url: r.url }; }
+    catch (e) { return { ok: false, ts, ms: Date.now() - ts, kind: (e && e.kind) || 'error', error: String((e && e.message) || e) }; }
+  })().finally(() => { rndSsoInflight = null; });
+  return rndSsoInflight;
+}
+
 /* force: 캐시 TTL 과 상관없이 다시 조회. opts.full: 참여인력(계상률) 캐시(2시간)도 건너뛰고 과제마다 다시 조회 — 패널·팝업의 ↻ 처럼 사용자가 직접 누른 새로고침만.
  * 알람·설정 변경·청구서 작성 뒤의 자동 조회는 참여인력 캐시를 그대로 쓴다 (과제마다 한 번씩 부르는 조회라 무거움).
  * 보통 조회가 진행 중일 때 전체 조회를 요청하면 그 조회가 끝난 뒤 이어서 전체 조회를 한다 */
@@ -58,16 +75,23 @@ async function refresh(force, opts) {
       const settings = await KRX_SETTINGS.load();
       const cache = await getCache();
       const ttl = Math.max(1, KRX_FMT.num(settings.refreshMinutes) || 10) * 60000;
-      // 오류로 끝난 결과(예: 재로드 직후 일시적 네트워크 오류)는 TTL 과 상관없이 다시 조회
-      if (!force && cache && cache.ts && !cache.error && Date.now() - cache.ts < ttl) { updateBadge(cache); return cache; }
+      // 오류로 끝난 결과(예: 재로드 직후 일시적 네트워크 오류)는 TTL 과 상관없이 다시 조회.
+      // "로그인 필요"로 끝난 결과도 자동 로그인이 켜져 있으면 RND_SSO_RETRY_MS 뒤부터 다시 조회 — eClass 에 로그인하고 돌아오면 다음 패널 열기/알람에서 SSO 로 이어진다 (실패해도 요청 2개라 가벼움)
+      const retryLogin = !!(cache && cache.loginRequired && settings.rndAutoLogin !== false && Date.now() - cache.ts >= RND_SSO_RETRY_MS);
+      if (!force && cache && cache.ts && !cache.error && !retryLogin && Date.now() - cache.ts < ttl) { updateBadge(cache); return cache; }
       let data = await KRX_API.collect(settings, { freshMembership: full });
+      if (data.loginRequired && settings.rndAutoLogin !== false) {   // 세션이 풀림 → eClass SSO 로 다시 로그인한 뒤 한 번 더 조회 (rndAutoLogin). eClass 도 풀려 있으면 eclassLogin 으로 안내
+        const sso = await rndAutoLogin();
+        if (sso.ok) { data = await KRX_API.collect(settings, { freshMembership: full }); data.autoLogin = { ok: true, ts: sso.ts, ms: sso.ms }; }
+        else { data.eclassLogin = sso.kind === 'eclass-login'; data.autoLogin = { ok: false, ts: sso.ts, kind: sso.kind, error: sso.error }; }
+      }
       full = false;   // 참여인력은 방금 다시 조회했으므로 이 뒤의 재조회(설정 변경·사번 감지)는 캐시로
       if (gen !== settingsGen) { force = true; continue; }   // 조회 중 설정이 바뀜(예: 과제 제외) → 이 결과는 캐시하지 않고 다시 조회
       if (data.memberFilter === 'no-id' && !data.loginRequired) {
         // 사번/이름을 아직 모름 → 열려 있는 ERP 탭이 있으면 브리지를 넣어 직접 읽어 온 뒤 한 번 더 판정
         await injectBridgeIntoOpenErpTabs();
         const u = (await chrome.storage.local.get('rndUser')).rndUser;
-        if (u && (u.userId || u.empNo || u.userNm)) data = await KRX_API.collect(settings);
+        if (u && (u.userId || u.empNo || u.userNm)) { const al = data.autoLogin; data = await KRX_API.collect(settings); if (al) data.autoLogin = al; }
       }
       const issued = data.issued || [];
       const projectList = data.projectList || [];
@@ -492,6 +516,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'jctCaptured': await appendCapture(msg.entry, sender); return { ok: true };
       case 'unapprovedSnapshot': await chrome.storage.local.set({ unapprovedSnapshot: msg.snapshot }); return { ok: true };
       case 'hrPay': { const merged = await mergeHrPay(msg.patch || {}); await patchCacheHrPay(merged); return { ok: true }; }
+      case 'rndSsoLogin': return await rndAutoLogin();   // 설정 페이지 "지금 시도": R&D ERP eClass SSO 자동 로그인만 (조회는 따로 getData force)
       case 'hrCollectNow': return await collectHr(true, !!msg.all);   // 패널 급여·연구수당 보기/↻, 설정 페이지 지금 수집 (백그라운드 직접, 안 되면 HR 탭)
       case 'clearHrPay': await chrome.storage.local.remove('hrPay'); await patchCacheHrPay(null); return { ok: true };
       case 'rndUser': {
